@@ -2352,8 +2352,15 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
 	// 绑定分组
 	groupIDs := input.GroupIDs
+	if groupIDs == nil {
+		if planGroupIDs, err := s.defaultOpenAIPlanGroupIDs(ctx, input.Platform, input.Type, input.Credentials); err != nil {
+			return nil, err
+		} else if len(planGroupIDs) > 0 {
+			groupIDs = planGroupIDs
+		}
+	}
 	// 如果没有指定分组,自动绑定对应平台的默认分组
-	if len(groupIDs) == 0 && !input.SkipDefaultGroupBind {
+	if groupIDs == nil && !input.SkipDefaultGroupBind {
 		defaultGroupName := input.Platform + "-default"
 		groups, err := s.groupRepo.ListActiveByPlatform(ctx, input.Platform)
 		if err == nil {
@@ -2546,6 +2553,14 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.AutoPauseOnExpired = *input.AutoPauseOnExpired
 	}
 
+	if input.GroupIDs == nil {
+		if planGroupIDs, err := s.defaultOpenAIPlanGroupIDs(ctx, account.Platform, account.Type, account.Credentials); err != nil {
+			return nil, err
+		} else if len(planGroupIDs) > 0 {
+			input.GroupIDs = &planGroupIDs
+		}
+	}
+
 	// 先验证分组是否存在（在任何写操作之前）
 	if input.GroupIDs != nil {
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
@@ -2577,6 +2592,72 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		return nil, err
 	}
 	return updated, nil
+}
+
+func (s *adminServiceImpl) defaultOpenAIPlanGroupIDs(ctx context.Context, platform, accountType string, credentials map[string]any) ([]int64, error) {
+	if platform != PlatformOpenAI || accountType != AccountTypeOAuth {
+		return nil, nil
+	}
+	planType := strings.ToLower(strings.TrimSpace(credentialString(credentials, "plan_type")))
+	if planType != "plus" && planType != "free" {
+		return nil, nil
+	}
+	if s.groupRepo == nil {
+		return nil, errors.New("group repository not configured")
+	}
+	groups, err := s.groupRepo.ListActiveByPlatform(ctx, PlatformOpenAI)
+	if err != nil {
+		return nil, fmt.Errorf("list openai groups: %w", err)
+	}
+
+	groupIDs := make([]int64, 0, len(groups))
+	seen := make(map[int64]struct{}, len(groups))
+	add := func(id int64) {
+		if id <= 0 {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		groupIDs = append(groupIDs, id)
+	}
+	for _, group := range groups {
+		if group.Status != "" && group.Status != StatusActive {
+			continue
+		}
+		switch planType {
+		case "plus":
+			if group.Name == "codex-plus" || group.SubscriptionType == SubscriptionTypeSubscription {
+				add(group.ID)
+			}
+		case "free":
+			if group.Name == "codex-free" {
+				add(group.ID)
+			}
+		}
+	}
+	return groupIDs, nil
+}
+
+func credentialString(credentials map[string]any, key string) string {
+	if credentials == nil {
+		return ""
+	}
+	value, ok := credentials[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 // BulkUpdateAccounts updates multiple accounts in one request.

@@ -17,10 +17,12 @@ func ptrString[T ~string](v T) *string {
 
 // groupRepoStubForAdmin 用于测试 AdminService 的 GroupRepository Stub
 type groupRepoStubForAdmin struct {
-	created *Group // 记录 Create 调用的参数
-	updated *Group // 记录 Update 调用的参数
-	getByID *Group // GetByID 返回值
-	getErr  error  // GetByID 返回的错误
+	created                    *Group // 记录 Create 调用的参数
+	updated                    *Group // 记录 Update 调用的参数
+	getByID                    *Group // GetByID 返回值
+	getErr                     error  // GetByID 返回的错误
+	listActiveByPlatformGroups []Group
+	listActiveByPlatformErr    error
 
 	listWithFiltersCalls       int
 	listWithFiltersParams      pagination.PaginationParams
@@ -98,7 +100,10 @@ func (s *groupRepoStubForAdmin) ListActive(_ context.Context) ([]Group, error) {
 }
 
 func (s *groupRepoStubForAdmin) ListActiveByPlatform(_ context.Context, _ string) ([]Group, error) {
-	panic("unexpected ListActiveByPlatform call")
+	if s.listActiveByPlatformErr != nil {
+		return nil, s.listActiveByPlatformErr
+	}
+	return s.listActiveByPlatformGroups, nil
 }
 
 func (s *groupRepoStubForAdmin) ExistsByName(_ context.Context, _ string) (bool, error) {
