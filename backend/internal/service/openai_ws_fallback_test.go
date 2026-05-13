@@ -110,6 +110,16 @@ func TestClassifyOpenAIWSErrorEvent(t *testing.T) {
 	require.True(t, recoverable)
 }
 
+func TestClassifyOpenAIWSErrorEventRateLimitCanFallback(t *testing.T) {
+	reason, recoverable := classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"rate limited"}}`))
+	require.Equal(t, "upstream_rate_limited", reason)
+	require.True(t, recoverable)
+
+	reason, retryable := classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("upstream_rate_limited", errors.New("rate limited")))
+	require.Equal(t, "upstream_rate_limited", reason)
+	require.False(t, retryable)
+}
+
 func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
 	reason, retryable := classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("policy_violation", errors.New("policy")))
 	require.Equal(t, "policy_violation", reason)

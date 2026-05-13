@@ -2649,6 +2649,26 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			break
 		}
+		if wsErr != nil {
+			if statusCode, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(wsErr); ok &&
+				s.shouldFailoverOpenAIUpstreamResponse(statusCode, "", nil) {
+				if account.IsPoolMode() {
+					s.recordOpenAIWSNonRetryableFastFallback()
+					logOpenAIWSModeInfo(
+						"failover_after_ws_retries account_id=%d attempts=%d status=%d retryable_same_account=%v",
+						account.ID,
+						wsAttempts,
+						statusCode,
+						isPoolModeRetryableStatus(statusCode),
+					)
+					return nil, &UpstreamFailoverError{
+						StatusCode:             statusCode,
+						ResponseBody:           []byte(wsErr.Error()),
+						RetryableOnSameAccount: isPoolModeRetryableStatus(statusCode),
+					}
+				}
+			}
+		}
 		if wsErr == nil {
 			firstTokenMs := int64(0)
 			hasFirstTokenMs := wsResult != nil && wsResult.FirstTokenMs != nil

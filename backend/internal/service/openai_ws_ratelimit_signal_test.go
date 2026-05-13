@@ -83,7 +83,7 @@ func (r *openAICodexExtraListRepo) ListWithFilters(_ context.Context, params pag
 	return r.accounts, &pagination.PaginationResult{Total: int64(len(r.accounts)), Page: params.Page, PageSize: params.PageSize}, nil
 }
 
-func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitPersistsRateLimit(t *testing.T) {
+func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitFailsOverInPoolMode(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	resetAt := time.Now().Add(2 * time.Hour).Unix()
@@ -138,6 +138,7 @@ func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitPersistsRateLimit(
 		Status:      StatusActive,
 		Schedulable: true,
 		Concurrency: 1,
+		Mode:        AccountModePool,
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
 			"base_url": wsServer.URL,
@@ -162,7 +163,11 @@ func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitPersistsRateLimit(
 	result, err := svc.Forward(context.Background(), c, &account, body)
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.Equal(t, http.StatusOK, rec.Code, "Service 层应把 429 交给 handler failover，不提前写 429 响应")
 	require.Nil(t, upstream.lastReq, "WS 限流 error event 不应回退到同账号 HTTP")
 	require.Len(t, repo.rateLimitCalls, 1)
 	require.WithinDuration(t, time.Unix(resetAt, 0), repo.rateLimitCalls[0], 2*time.Second)
