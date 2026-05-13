@@ -1,0 +1,18 @@
+[Unit]
+Description=Sync new CLIProxyAPI OpenAI OAuth accounts into sub2api
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/sub2api
+Environment=SUB2API_DIR=/root/sub2api
+Environment=CPA_AUTH_DIR=/root/CLIProxyAPI/auths
+Environment=SUB2API_PG_CONTAINER=sub2api-postgres
+Environment=SUB2API_DB=sub2api
+Environment=SUB2API_DB_USER=sub2api
+Environment=SUB2API_SYNC_LOG=/var/log/sub2api/cliproxyapi-account-sync.log
+ExecStart=/root/sub2api/tools/sync_cliproxyapi_new_accounts.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

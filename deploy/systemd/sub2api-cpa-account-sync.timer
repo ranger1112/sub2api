@@ -1,0 +1,12 @@
+[Unit]
+Description=Run sub2api CPA account sync periodically
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+AccuracySec=1min
+Persistent=true
+Unit=sub2api-cpa-account-sync.service
+
+[Install]
+WantedBy=timers.target
