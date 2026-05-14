@@ -1,0 +1,41 @@
+{
+  "data": {
+    "type": "sub2api-data",
+    "version": 1,
+    "exported_at": "2026-05-15T00:00:00Z",
+    "proxies": [],
+    "accounts": [
+      {
+        "name": "WindsurfAPI OpenAI",
+        "notes": "OpenAI-compatible WindsurfAPI upstream. Replace ${WINDSURF_API_KEY} and base_url before importing.",
+        "platform": "openai",
+        "type": "api_key",
+        "credentials": {
+          "api_key": "${WINDSURF_API_KEY}",
+          "base_url": "http://windsurf-api:3003"
+        },
+        "extra": {
+          "note": "OpenAI-compatible WindsurfAPI upstream"
+        },
+        "concurrency": 3,
+        "priority": 50
+      },
+      {
+        "name": "WindsurfAPI Anthropic",
+        "notes": "Anthropic-compatible WindsurfAPI upstream. Replace ${WINDSURF_API_KEY} and base_url before importing.",
+        "platform": "anthropic",
+        "type": "api_key",
+        "credentials": {
+          "api_key": "${WINDSURF_API_KEY}",
+          "base_url": "http://windsurf-api:3003"
+        },
+        "extra": {
+          "note": "Anthropic-compatible WindsurfAPI upstream"
+        },
+        "concurrency": 3,
+        "priority": 50
+      }
+    ]
+  },
+  "skip_default_group_bind": true
+}

@@ -1,0 +1,43 @@
+# Optional WindsurfAPI sidecar for Sub2API.
+# Usage:
+#   1. Set WINDSURF_API_KEY in deploy/.env.
+#   2. Start with the main compose file:
+#      docker compose -f docker-compose.yml -f docker-compose.windsurfapi.yml up -d
+#   3. Import deploy/windsurfapi-account-import.json in the Sub2API admin account data import flow.
+
+services:
+  windsurf-api:
+    image: ghcr.io/dwgx/windsurf-api:latest
+    restart: unless-stopped
+    init: true
+    environment:
+      PORT: 3003
+      DATA_DIR: /data
+      API_KEY: ${WINDSURF_API_KEY:?WINDSURF_API_KEY is required}
+      LS_BINARY_PATH: /opt/windsurf/language_server_linux_x64
+    volumes:
+      - windsurf_api_data:/data
+      - windsurf_api_opt:/opt/windsurf
+      - windsurf_api_workspace:/tmp/windsurf-workspace
+    expose:
+      - "3003"
+    networks:
+      - sub2api-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  windsurf_api_data:
+    driver: local
+  windsurf_api_opt:
+    driver: local
+  windsurf_api_workspace:
+    driver: local
