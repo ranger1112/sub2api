@@ -1,0 +1,11 @@
+[Unit]
+Description=Sub2API mihomo subscription update timer
+Requires=sub2api-mihomo-sub-update.service
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

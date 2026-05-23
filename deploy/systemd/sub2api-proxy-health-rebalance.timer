@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Sub2API proxy health rebalance periodically
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+Persistent=true
+Unit=sub2api-proxy-health-rebalance.service
+
+[Install]
+WantedBy=timers.target

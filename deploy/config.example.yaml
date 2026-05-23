@@ -246,6 +246,9 @@ gateway:
     # ingress 默认模式：off|ctx_pool|passthrough（仅 mode_router_v2_enabled=true 生效）
     # 兼容旧值：shared/dedicated 会按 ctx_pool 处理。
     ingress_mode_default: ctx_pool
+    # 是否允许 HTTP/SSE 入站请求使用上游 WSv2 连接池。
+    # 默认 false 保持历史行为；开启前建议先用少量账号 canary，避免连接数/上游 WS 配额突增。
+    http_ingress_enabled: false
     # 全局总开关，默认 true；关闭时所有请求保持原有 HTTP/SSE 路由
     enabled: true
     # 按账号类型细分开关

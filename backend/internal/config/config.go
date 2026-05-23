@@ -767,6 +767,9 @@ type GatewayOpenAIWSConfig struct {
 	ModeRouterV2Enabled bool `mapstructure:"mode_router_v2_enabled"`
 	// IngressModeDefault: ingress 默认模式（off/ctx_pool/passthrough）
 	IngressModeDefault string `mapstructure:"ingress_mode_default"`
+	// HTTPIngressEnabled: 是否允许 HTTP/SSE 入站请求使用上游 WSv2。
+	// 默认 false，保持历史行为；启用后可用 WS 连接池降低 HTTP 流式请求 TTFT。
+	HTTPIngressEnabled bool `mapstructure:"http_ingress_enabled"`
 	// Enabled: 全局总开关（默认 true）
 	Enabled bool `mapstructure:"enabled"`
 	// OAuthEnabled: 是否允许 OpenAI OAuth 账号使用 WS
@@ -1673,6 +1676,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
 	viper.SetDefault("gateway.openai_ws.ingress_mode_default", "ctx_pool")
+	viper.SetDefault("gateway.openai_ws.http_ingress_enabled", false)
 	viper.SetDefault("gateway.openai_ws.oauth_enabled", true)
 	viper.SetDefault("gateway.openai_ws.apikey_enabled", true)
 	viper.SetDefault("gateway.openai_ws.force_http", false)

@@ -1,0 +1,13 @@
+[Unit]
+Description=Sub2API mihomo subscription update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/sub2api
+Environment=MIHOMO_SUB_URL=
+ExecStart=/usr/bin/python3 /root/sub2api/tools/update_mihomo_subscription.py
+StandardOutput=journal
+StandardError=journal
+Nice=10

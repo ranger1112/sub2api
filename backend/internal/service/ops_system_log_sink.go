@@ -37,10 +37,11 @@ type OpsSystemLogSink struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	droppedCount uint64
-	writeFailed  uint64
-	writtenCount uint64
-	totalDelayNs uint64
+	droppedCount    uint64
+	writeFailed     uint64
+	writtenCount    uint64
+	totalDelayNs    uint64
+	accessSampleSeq uint64 // counter for http.access sampling
 
 	lastError atomic.Value
 }
@@ -109,7 +110,16 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 		}
 	}
 	if strings.Contains(component, "http.access") {
-		return true
+		// 错误请求和慢请求全量入库；正常快请求按 1/20 采样。
+		if event.Fields != nil {
+			if statusCode := asInt(event.Fields["status_code"]); statusCode >= 400 {
+				return true
+			}
+			if latencyMs := asInt64(event.Fields["latency_ms"]); latencyMs > 3000 {
+				return true
+			}
+		}
+		return atomic.AddUint64(&s.accessSampleSeq, 1)%20 == 0
 	}
 	if strings.Contains(component, "audit") {
 		return true
@@ -290,6 +300,46 @@ func asString(v any) string {
 	default:
 		return ""
 	}
+}
+
+func asInt(v any) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case float64:
+		return int(t)
+	case json.Number:
+		if n, err := t.Int64(); err == nil {
+			return int(n)
+		}
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(t)); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+func asInt64(v any) int64 {
+	switch t := v.(type) {
+	case int64:
+		return t
+	case int:
+		return int64(t)
+	case float64:
+		return int64(t)
+	case json.Number:
+		if n, err := t.Int64(); err == nil {
+			return n
+		}
+	case string:
+		if n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64); err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 func asInt64Ptr(v any) *int64 {

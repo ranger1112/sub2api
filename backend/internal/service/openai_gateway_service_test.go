@@ -30,6 +30,22 @@ type stubOpenAIAccountRepo struct {
 	accounts []Account
 }
 
+type circuitBreakerAccountRepo struct {
+	stubOpenAIAccountRepo
+	calls  int
+	id     int64
+	until  time.Time
+	reason string
+}
+
+func (r *circuitBreakerAccountRepo) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
+	r.calls++
+	r.id = id
+	r.until = until
+	r.reason = reason
+	return nil
+}
+
 type snapshotUpdateAccountRepo struct {
 	stubOpenAIAccountRepo
 	updateExtraCalls chan map[string]any
@@ -77,6 +93,56 @@ func (r stubOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, pl
 
 func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	return r.ListSchedulableByPlatform(ctx, platform)
+}
+
+func TestOpenAIResponsesFailureCircuitBreaker_TripsOnConsecutiveEOF(t *testing.T) {
+	repo := &circuitBreakerAccountRepo{}
+	svc := &OpenAIGatewayService{
+		accountRepo:                    repo,
+		responsesFailureCircuitBreaker: newOpenAIResponsesFailureCircuitBreaker(),
+	}
+
+	for i := 0; i < openAIResponsesCircuitConsecutiveEOFN-1; i++ {
+		svc.RecordOpenAIResponsesForwardFailure(context.Background(), 88, fmt.Errorf("upstream request failed: EOF"))
+	}
+	require.Equal(t, 0, repo.calls)
+
+	svc.RecordOpenAIResponsesForwardFailure(context.Background(), 88, fmt.Errorf("upstream request failed: EOF"))
+	require.Equal(t, 1, repo.calls)
+	require.Equal(t, int64(88), repo.id)
+	require.Contains(t, repo.reason, "consecutive EOF")
+	require.True(t, time.Until(repo.until) > 25*time.Minute)
+}
+
+func TestOpenAIResponsesFailureCircuitBreaker_TripsOnWindow502Threshold(t *testing.T) {
+	repo := &circuitBreakerAccountRepo{}
+	svc := &OpenAIGatewayService{
+		accountRepo:                    repo,
+		responsesFailureCircuitBreaker: newOpenAIResponsesFailureCircuitBreaker(),
+	}
+
+	for i := 0; i < openAIResponsesCircuitWindow502Threshold; i++ {
+		svc.RecordOpenAIResponsesForwardFailure(context.Background(), 90, errors.New("upstream request failed: connection reset by peer"))
+	}
+	require.Equal(t, 1, repo.calls)
+	require.Equal(t, int64(90), repo.id)
+	require.Contains(t, repo.reason, "502 threshold")
+}
+
+func TestOpenAIResponsesFailureCircuitBreaker_SuccessResetsFailureState(t *testing.T) {
+	repo := &circuitBreakerAccountRepo{}
+	svc := &OpenAIGatewayService{
+		accountRepo:                    repo,
+		responsesFailureCircuitBreaker: newOpenAIResponsesFailureCircuitBreaker(),
+	}
+
+	for i := 0; i < openAIResponsesCircuitConsecutiveEOFN-1; i++ {
+		svc.RecordOpenAIResponsesForwardFailure(context.Background(), 88, fmt.Errorf("upstream request failed: EOF"))
+	}
+	svc.RecordOpenAIResponsesSuccess(88)
+	svc.RecordOpenAIResponsesForwardFailure(context.Background(), 88, fmt.Errorf("upstream request failed: EOF"))
+
+	require.Equal(t, 0, repo.calls)
 }
 
 type stubConcurrencyCache struct {

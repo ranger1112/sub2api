@@ -353,6 +353,7 @@ type OpenAIGatewayService struct {
 	codexSnapshotThrottle               *accountWriteThrottle
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
+	responsesFailureCircuitBreaker      *openAIResponsesFailureCircuitBreaker
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -399,17 +400,18 @@ func NewOpenAIGatewayService(
 			nil,
 			"service.openai_gateway",
 		),
-		httpUpstream:          httpUpstream,
-		deferredService:       deferredService,
-		openAITokenProvider:   openAITokenProvider,
-		toolCorrector:         NewCodexToolCorrector(),
-		openaiWSResolver:      NewOpenAIWSProtocolResolver(cfg),
-		resolver:              resolver,
-		channelService:        channelService,
-		balanceNotifyService:  balanceNotifyService,
-		settingService:        settingService,
-		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
-		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
+		httpUpstream:                   httpUpstream,
+		deferredService:                deferredService,
+		openAITokenProvider:            openAITokenProvider,
+		toolCorrector:                  NewCodexToolCorrector(),
+		openaiWSResolver:               NewOpenAIWSProtocolResolver(cfg),
+		resolver:                       resolver,
+		channelService:                 channelService,
+		balanceNotifyService:           balanceNotifyService,
+		settingService:                 settingService,
+		responseHeaderFilter:           compileResponseHeaderFilter(cfg),
+		codexSnapshotThrottle:          newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
+		responsesFailureCircuitBreaker: newOpenAIResponsesFailureCircuitBreaker(),
 	}
 	svc.logOpenAIWSModeBootstrap()
 	return svc
@@ -530,11 +532,12 @@ func (s *OpenAIGatewayService) logOpenAIWSModeBootstrap() {
 	}
 	wsCfg := s.cfg.Gateway.OpenAIWS
 	logOpenAIWSModeInfo(
-		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v force_http=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d",
+		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v force_http=%v http_ingress_enabled=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d",
 		wsCfg.Enabled,
 		wsCfg.OAuthEnabled,
 		wsCfg.APIKeyEnabled,
 		wsCfg.ForceHTTP,
+		wsCfg.HTTPIngressEnabled,
 		wsCfg.ResponsesWebsocketsV2,
 		wsCfg.ResponsesWebsockets,
 		wsCfg.PayloadLogSampleRate,
@@ -2017,7 +2020,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	clientTransport := GetOpenAIClientTransport(c)
 	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
-	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, clientTransport)
+	// canary/性能优化场景可通过 gateway.openai_ws.http_ingress_enabled 显式放开，
+	// 让 HTTP/SSE 入站请求复用上游 WSv2 连接池以降低 TTFT；默认仍保持历史行为。
+	if !s.openAIWSHTTPIngressEnabled() {
+		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, clientTransport)
+	}
 	if c != nil {
 		c.Set("openai_ws_transport_decision", string(wsDecision.Transport))
 		c.Set("openai_ws_transport_reason", wsDecision.Reason)
@@ -2847,6 +2854,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		return forwardResult, nil
 	}
+}
+
+func (s *OpenAIGatewayService) openAIWSHTTPIngressEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIngressEnabled
 }
 
 func (s *OpenAIGatewayService) forwardOpenAIPassthrough(

@@ -136,3 +136,8 @@ docs/*
 frontend/coverage/
 aicodex
 output/
+.omx/
+
+.omc/
+**/.omc/
+tools/__pycache__/

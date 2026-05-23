@@ -433,7 +433,20 @@ FROM import_flat i
 JOIN accounts a ON a.platform = 'openai'
     AND a.type = 'oauth'
     AND a.deleted_at IS NULL
-    AND lower(a.credentials->>'chatgpt_account_id') = i.account_key;
+    AND lower(a.credentials->>'chatgpt_account_id') = i.account_key
+WHERE NOT EXISTS (
+    -- Skip accounts already manually assigned to groups outside the migration's
+    -- managed set (codex-plus, codex-free, subscription-type groups).
+    -- This protects manual assignments to groups like 大包, 中包, 小包.
+    SELECT 1
+    FROM account_groups ag
+    JOIN groups g ON g.id = ag.group_id
+    WHERE ag.account_id = a.id
+      AND g.deleted_at IS NULL
+      AND g.platform = 'openai'
+      AND g.name NOT IN ('codex-plus', 'codex-free')
+      AND g.subscription_type IS DISTINCT FROM 'standard'
+);
 
 CREATE TEMP TABLE migration_managed_groups AS
 SELECT id
@@ -479,6 +492,73 @@ SELECT dag.account_id,
 FROM desired_account_groups dag
 JOIN groups g ON g.id = dag.group_id
 ON CONFLICT (account_id, group_id) DO NOTHING;
+
+-- Assign active proxies to imported free accounts that do not already have one.
+-- Existing proxy choices are preserved. The round-robin starts after current
+-- active account counts so newly imported accounts spread across available
+-- proxies instead of always beginning at the first proxy id.
+-- HK nodes (port 7900-7911) and plus-reserved nodes (port 7924-7925) are excluded.
+CREATE TEMP TABLE active_proxy_pool AS
+SELECT p.id,
+       row_number() OVER (ORDER BY COALESCE(proxy_counts.account_count, 0), p.id) AS proxy_rank,
+       count(*) OVER () AS proxy_count
+FROM proxies p
+LEFT JOIN (
+    SELECT proxy_id, count(*) AS account_count
+    FROM accounts
+    WHERE deleted_at IS NULL
+      AND proxy_id IS NOT NULL
+    GROUP BY proxy_id
+) proxy_counts ON proxy_counts.proxy_id = p.id
+WHERE p.deleted_at IS NULL
+  AND p.status = 'active'
+  AND p.port NOT BETWEEN 7900 AND 7911
+  AND p.port NOT IN (7924, 7925);
+
+CREATE TEMP TABLE imported_free_accounts_without_proxy AS
+SELECT ia.account_id,
+       row_number() OVER (ORDER BY a.id) AS account_rank
+FROM imported_active_accounts ia
+JOIN accounts a ON a.id = ia.account_id
+WHERE ia.plan_type = 'free'
+  AND a.proxy_id IS NULL;
+
+UPDATE accounts a
+SET proxy_id = p.id,
+    updated_at = now()
+FROM imported_free_accounts_without_proxy f
+JOIN active_proxy_pool p
+  ON p.proxy_rank = (((f.account_rank - 1) % p.proxy_count) + 1)
+WHERE a.id = f.account_id
+  AND a.proxy_id IS NULL;
+
+-- Assign plus-reserved proxies (port 7924-7925) to imported plus accounts
+-- that do not already have one. Round-robin between the two nodes.
+CREATE TEMP TABLE plus_proxy_pool AS
+SELECT p.id,
+       row_number() OVER (ORDER BY p.port) AS proxy_rank,
+       count(*) OVER () AS proxy_count
+FROM proxies p
+WHERE p.deleted_at IS NULL
+  AND p.status = 'active'
+  AND p.port IN (7924, 7925);
+
+CREATE TEMP TABLE imported_plus_accounts_without_proxy AS
+SELECT ia.account_id,
+       row_number() OVER (ORDER BY a.id) AS account_rank
+FROM imported_active_accounts ia
+JOIN accounts a ON a.id = ia.account_id
+WHERE ia.plan_type = 'plus'
+  AND a.proxy_id IS NULL;
+
+UPDATE accounts a
+SET proxy_id = p.id,
+    updated_at = now()
+FROM imported_plus_accounts_without_proxy f
+JOIN plus_proxy_pool p
+  ON p.proxy_rank = (((f.account_rank - 1) % p.proxy_count) + 1)
+WHERE a.id = f.account_id
+  AND a.proxy_id IS NULL;
 
 COMMIT;
 """
@@ -537,6 +617,7 @@ SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) FROM (
            credentials ? 'client_id' AS has_client_id,
            credentials ? 'expires_at' AS has_credential_expires_at,
            credentials->>'plan_type' AS plan_type,
+           proxy_id,
            COALESCE((
                SELECT json_agg(g.name ORDER BY g.name)
                FROM account_groups ag
@@ -571,6 +652,7 @@ SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) FROM (
     bad_token_fields = []
     bad_plan_type = []
     bad_plan_groups = []
+    bad_free_proxy = []
     bad_account_expires = []
 
     group_sql = """
@@ -606,6 +688,8 @@ WHERE deleted_at IS NULL
                 expected_groups = ["codex-free"]
             if actual_groups != expected_groups:
                 bad_plan_groups.append([email, row.get("id"), expected_plan, expected_groups, actual_groups])
+            if expected_plan == "free" and row.get("proxy_id") is None:
+                bad_free_proxy.append([email, row.get("id")])
         if not args.keep_account_expires and row.get("account_expires_at") is not None:
             bad_account_expires.append([email, row.get("id"), row.get("account_expires_at")])
 
@@ -623,6 +707,7 @@ WHERE deleted_at IS NULL
         "bad_token_field_count": len(bad_token_fields),
         "bad_plan_type_count": len(bad_plan_type),
         "bad_plan_group_count": len(bad_plan_groups),
+        "bad_free_proxy_count": len(bad_free_proxy),
         "bad_account_expires_count": len(bad_account_expires),
         "missing": missing,
         "duplicate_account_ids": duplicate_account_ids,
@@ -632,6 +717,7 @@ WHERE deleted_at IS NULL
         "bad_token_fields": bad_token_fields,
         "bad_plan_type": bad_plan_type,
         "bad_plan_groups": bad_plan_groups,
+        "bad_free_proxy": bad_free_proxy,
         "bad_account_expires": bad_account_expires,
     }
     if not quiet:
@@ -649,6 +735,7 @@ def report_has_failures(report: dict[str, Any]) -> bool:
         "bad_token_field_count",
         "bad_plan_type_count",
         "bad_plan_group_count",
+        "bad_free_proxy_count",
         "bad_account_expires_count",
     )
     return any(int(report.get(key, 0)) != 0 for key in failure_keys)

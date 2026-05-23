@@ -1,0 +1,12 @@
+[Unit]
+Description=Sub2API proxy health check and account rebalance
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/sub2api
+ExecStart=/usr/bin/python3 /root/sub2api/tools/rebalance_proxy_health.py --apply --max-accounts-per-ip 15 --workers 2 --connect-timeout 2 --max-time 5 --temp-unsched-minutes 30
+Nice=15
+IOSchedulingClass=idle
+IOSchedulingPriority=7
