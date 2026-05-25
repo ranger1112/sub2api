@@ -17,6 +17,7 @@ const (
 	defaultDashboardStatsFreshTTL       = 15 * time.Second
 	defaultDashboardStatsCacheTTL       = 30 * time.Second
 	defaultDashboardStatsRefreshTimeout = 30 * time.Second
+	defaultDashboardGroupSummaryTTL     = 60 * time.Second
 )
 
 // ErrDashboardStatsCacheMiss 标记仪表盘缓存未命中。
@@ -27,6 +28,11 @@ type DashboardStatsCache interface {
 	GetDashboardStats(ctx context.Context) (string, error)
 	SetDashboardStats(ctx context.Context, data string, ttl time.Duration) error
 	DeleteDashboardStats(ctx context.Context) error
+	// GetGroupUsageSummary 读取按 group 维度的用量摘要缓存。
+	// todayStart 由调用方按用户时区计算，缓存实现需根据其唯一标识区分不同时区。
+	GetGroupUsageSummary(ctx context.Context, todayStart time.Time) (string, error)
+	// SetGroupUsageSummary 写入按 group 维度的用量摘要缓存。
+	SetGroupUsageSummary(ctx context.Context, todayStart time.Time, data string, ttl time.Duration) error
 }
 
 type dashboardStatsRangeFetcher interface {
@@ -38,25 +44,32 @@ type dashboardStatsCacheEntry struct {
 	UpdatedAt int64                      `json:"updated_at"`
 }
 
+type groupUsageSummaryCacheEntry struct {
+	Summaries []usagestats.GroupUsageSummary `json:"summaries"`
+	UpdatedAt int64                          `json:"updated_at"`
+}
+
 // DashboardService 提供管理员仪表盘统计服务。
 type DashboardService struct {
-	usageRepo      UsageLogRepository
-	aggRepo        DashboardAggregationRepository
-	cache          DashboardStatsCache
-	cacheFreshTTL  time.Duration
-	cacheTTL       time.Duration
-	refreshTimeout time.Duration
-	refreshing     int32
-	aggEnabled     bool
-	aggInterval    time.Duration
-	aggLookback    time.Duration
-	aggUsageDays   int
+	usageRepo       UsageLogRepository
+	aggRepo         DashboardAggregationRepository
+	cache           DashboardStatsCache
+	cacheFreshTTL   time.Duration
+	cacheTTL        time.Duration
+	refreshTimeout  time.Duration
+	refreshing      int32
+	aggEnabled      bool
+	aggInterval     time.Duration
+	aggLookback     time.Duration
+	aggUsageDays    int
+	groupSummaryTTL time.Duration
 }
 
 func NewDashboardService(usageRepo UsageLogRepository, aggRepo DashboardAggregationRepository, cache DashboardStatsCache, cfg *config.Config) *DashboardService {
 	freshTTL := defaultDashboardStatsFreshTTL
 	cacheTTL := defaultDashboardStatsCacheTTL
 	refreshTimeout := defaultDashboardStatsRefreshTimeout
+	groupSummaryTTL := defaultDashboardGroupSummaryTTL
 	aggEnabled := true
 	aggInterval := time.Minute
 	aggLookback := 2 * time.Minute
@@ -74,6 +87,11 @@ func NewDashboardService(usageRepo UsageLogRepository, aggRepo DashboardAggregat
 		if cfg.Dashboard.StatsRefreshTimeoutSeconds > 0 {
 			refreshTimeout = time.Duration(cfg.Dashboard.StatsRefreshTimeoutSeconds) * time.Second
 		}
+		// GroupSummaryTTLSeconds: 显式设为 0 表示禁用缓存（直接走实时聚合），
+		// 负数已在 config.Validate 拒绝；未设置时保留默认 60s。
+		if cfg.Dashboard.GroupSummaryTTLSeconds >= 0 {
+			groupSummaryTTL = time.Duration(cfg.Dashboard.GroupSummaryTTLSeconds) * time.Second
+		}
 		aggEnabled = cfg.DashboardAgg.Enabled
 		if cfg.DashboardAgg.IntervalSeconds > 0 {
 			aggInterval = time.Duration(cfg.DashboardAgg.IntervalSeconds) * time.Second
@@ -89,16 +107,17 @@ func NewDashboardService(usageRepo UsageLogRepository, aggRepo DashboardAggregat
 		aggEnabled = false
 	}
 	return &DashboardService{
-		usageRepo:      usageRepo,
-		aggRepo:        aggRepo,
-		cache:          cache,
-		cacheFreshTTL:  freshTTL,
-		cacheTTL:       cacheTTL,
-		refreshTimeout: refreshTimeout,
-		aggEnabled:     aggEnabled,
-		aggInterval:    aggInterval,
-		aggLookback:    aggLookback,
-		aggUsageDays:   aggUsageDays,
+		usageRepo:       usageRepo,
+		aggRepo:         aggRepo,
+		cache:           cache,
+		cacheFreshTTL:   freshTTL,
+		cacheTTL:        cacheTTL,
+		refreshTimeout:  refreshTimeout,
+		aggEnabled:      aggEnabled,
+		aggInterval:     aggInterval,
+		aggLookback:     aggLookback,
+		aggUsageDays:    aggUsageDays,
+		groupSummaryTTL: groupSummaryTTL,
 	}
 }
 
@@ -170,12 +189,63 @@ func (s *DashboardService) GetGroupStatsWithFilters(ctx context.Context, startTi
 }
 
 // GetGroupUsageSummary returns today's and cumulative cost for all groups.
+//
+// 当 Redis 缓存可用且 groupSummaryTTL > 0 时，先尝试读取按 todayStart 命名的缓存条目，
+// 命中则直接返回。未命中（或缓存禁用）回退到 usageRepo.GetAllGroupUsageSummary 实时聚合，
+// 并在拿到结果后异步写回缓存。任意缓存层错误都不影响主流程，仅记录日志。
 func (s *DashboardService) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	if s.cache != nil && s.groupSummaryTTL > 0 {
+		if cached, ok := s.getCachedGroupUsageSummary(ctx, todayStart); ok {
+			return cached, nil
+		}
+	}
 	results, err := s.usageRepo.GetAllGroupUsageSummary(ctx, todayStart)
 	if err != nil {
 		return nil, fmt.Errorf("get group usage summary: %w", err)
 	}
+	if s.cache != nil && s.groupSummaryTTL > 0 {
+		cacheCtx, cancel := s.cacheOperationContext()
+		defer cancel()
+		s.saveGroupUsageSummaryCache(cacheCtx, todayStart, results)
+	}
 	return results, nil
+}
+
+// getCachedGroupUsageSummary 读取 group summary 缓存条目。
+// 第二个返回值标记是否命中，区分 cache miss / 反序列化失败 / 真实命中三种情况。
+func (s *DashboardService) getCachedGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, bool) {
+	data, err := s.cache.GetGroupUsageSummary(ctx, todayStart)
+	if err != nil {
+		if !errors.Is(err, ErrDashboardStatsCacheMiss) {
+			logger.LegacyPrintf("service.dashboard", "[Dashboard] group summary 缓存读取失败: %v", err)
+		}
+		return nil, false
+	}
+	var entry groupUsageSummaryCacheEntry
+	if err := json.Unmarshal([]byte(data), &entry); err != nil {
+		logger.LegacyPrintf("service.dashboard", "[Dashboard] group summary 缓存反序列化失败: %v", err)
+		return nil, false
+	}
+	return entry.Summaries, true
+}
+
+// saveGroupUsageSummaryCache 写入 group summary 缓存，错误仅记录日志。
+func (s *DashboardService) saveGroupUsageSummaryCache(ctx context.Context, todayStart time.Time, summaries []usagestats.GroupUsageSummary) {
+	if s.cache == nil {
+		return
+	}
+	entry := groupUsageSummaryCacheEntry{
+		Summaries: summaries,
+		UpdatedAt: time.Now().Unix(),
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		logger.LegacyPrintf("service.dashboard", "[Dashboard] group summary 缓存序列化失败: %v", err)
+		return
+	}
+	if err := s.cache.SetGroupUsageSummary(ctx, todayStart, string(data), s.groupSummaryTTL); err != nil {
+		logger.LegacyPrintf("service.dashboard", "[Dashboard] group summary 缓存写入失败: %v", err)
+	}
 }
 
 func (s *DashboardService) getCachedDashboardStats(ctx context.Context) (*usagestats.DashboardStats, bool, error) {
