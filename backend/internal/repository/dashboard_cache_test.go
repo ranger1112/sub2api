@@ -29,9 +29,10 @@ func TestNewDashboardCacheKeyPrefix(t *testing.T) {
 }
 
 func TestDashboardCacheGroupSummaryKey(t *testing.T) {
-	cache := NewDashboardCache(nil, &config.Config{
+	cache, ok := NewDashboardCache(nil, &config.Config{
 		Dashboard: config.DashboardCacheConfig{KeyPrefix: "prod"},
 	}).(*dashboardCache)
+	require.True(t, ok)
 
 	utcStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
 	shanghaiStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*3600))
@@ -48,7 +49,8 @@ func TestDashboardCacheGroupSummaryKey(t *testing.T) {
 }
 
 func TestDashboardCacheGroupSummaryKeyNoPrefix(t *testing.T) {
-	cache := NewDashboardCache(nil, &config.Config{}).(*dashboardCache)
+	cache, ok := NewDashboardCache(nil, &config.Config{}).(*dashboardCache)
+	require.True(t, ok)
 	cache.keyPrefix = ""
 
 	utcStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
