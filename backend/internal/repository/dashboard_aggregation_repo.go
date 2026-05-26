@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
@@ -536,6 +537,59 @@ func (r *dashboardAggregationRepository) upsertGroupDailyAggregates(ctx context.
 	`
 	_, err := r.sql.ExecContext(ctx, query, start, end, tzName)
 	return err
+}
+
+// GetGroupUsageSummary 走 usage_dashboard_group_daily（历史 bucket_date < todayStart）
+// + usage_logs（今日 created_at >= todayStart）混合查询。
+//
+// 输出结构与原 usageLogRepository.GetAllGroupUsageSummary 完全一致：每个 group 一条记录，
+// total_cost = 历史累计 + 今日；today_cost 仅含今日。LEFT JOIN groups 保证所有分组都返回，
+// 包括今天没有用量的；today_cost 与 hist_cost 各自 COALESCE 空值为 0。
+//
+// 该路径避免对 usage_logs 做无 WHERE 全表 SUM——历史部分走主键扫描的小表
+// (usage_dashboard_group_daily)，今日部分走 (group_id, created_at) 索引。
+func (r *dashboardAggregationRepository) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	if r == nil || r.sql == nil {
+		return nil, nil
+	}
+	query := `
+		WITH historical AS (
+			SELECT group_id, SUM(actual_cost) AS hist_cost
+			FROM usage_dashboard_group_daily
+			WHERE bucket_date < $1::date
+			GROUP BY group_id
+		),
+		today AS (
+			SELECT group_id, COALESCE(SUM(actual_cost), 0) AS today_cost
+			FROM usage_logs
+			WHERE created_at >= $1 AND group_id IS NOT NULL
+			GROUP BY group_id
+		)
+		SELECT
+			g.id AS group_id,
+			COALESCE(h.hist_cost, 0) + COALESCE(t.today_cost, 0) AS total_cost,
+			COALESCE(t.today_cost, 0) AS today_cost
+		FROM groups g
+		LEFT JOIN historical h ON h.group_id = g.id
+		LEFT JOIN today t ON t.group_id = g.id
+	`
+	rows, err := r.sql.QueryContext(ctx, query, todayStart)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	results := make([]usagestats.GroupUsageSummary, 0)
+	for rows.Next() {
+		var row usagestats.GroupUsageSummary
+		if err := rows.Scan(&row.GroupID, &row.TotalCost, &row.TodayCost); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (r *dashboardAggregationRepository) isUsageLogsPartitioned(ctx context.Context) (bool, error) {

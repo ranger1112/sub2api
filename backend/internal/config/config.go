@@ -1246,6 +1246,10 @@ type DashboardCacheConfig struct {
 	// GroupSummaryTTLSeconds: group 用量摘要（管理员分组列表）缓存 TTL（秒）。
 	// 默认 60 秒；设为 0 表示禁用该缓存，回退到每次查询实时全量聚合。
 	GroupSummaryTTLSeconds int `mapstructure:"group_summary_ttl_seconds"`
+	// GroupSummaryUseAggregation: 是否启用 group_daily 预聚合表 + usage_logs 增量混合查询。
+	// 默认 false（保持原全表 SUM 行为）；开启后查询走 usage_dashboard_group_daily（历史）
+	// 与 usage_logs（今日增量）混合，规避全表扫描，但需要预聚合表已有完整历史数据。
+	GroupSummaryUseAggregation bool `mapstructure:"group_summary_use_aggregation"`
 }
 
 // DashboardAggregationConfig 仪表盘预聚合配置

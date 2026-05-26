@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,6 +64,10 @@ func (s *dashboardAggregationRepoTestStub) CleanupUsageBillingDedup(ctx context.
 func (s *dashboardAggregationRepoTestStub) EnsureUsageLogsPartitions(ctx context.Context, now time.Time) error {
 	s.ensurePartitionCalls++
 	return s.ensurePartitionErr
+}
+
+func (s *dashboardAggregationRepoTestStub) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	return nil, nil
 }
 
 func TestDashboardAggregationService_RunScheduledAggregation_EpochUsesRetentionStart(t *testing.T) {
