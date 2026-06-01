@@ -112,7 +112,7 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 	if strings.Contains(component, "http.access") {
 		// 错误请求和慢请求全量入库；正常快请求按 1/20 采样。
 		if event.Fields != nil {
-			if statusCode := asInt(event.Fields["status_code"]); statusCode >= 400 {
+			if statusCode := asOpsLogInt(event.Fields["status_code"]); statusCode >= 400 {
 				return true
 			}
 			if latencyMs := asInt64(event.Fields["latency_ms"]); latencyMs > 3000 {
@@ -302,7 +302,7 @@ func asString(v any) string {
 	}
 }
 
-func asInt(v any) int {
+func asOpsLogInt(v any) int {
 	switch t := v.(type) {
 	case int:
 		return t
