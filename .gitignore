@@ -118,6 +118,7 @@ backend/.installed
 tests
 CLAUDE.md
 .claude
+.omx/
 scripts
 .code-review-state
 #openspec/
