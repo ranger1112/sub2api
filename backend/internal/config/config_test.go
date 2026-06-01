@@ -76,6 +76,15 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	if cfg.Gateway.Scheduling.LoadBatchCacheTTLMS != 200 {
 		t.Fatalf("LoadBatchCacheTTLMS = %d, want 200", cfg.Gateway.Scheduling.LoadBatchCacheTTLMS)
 	}
+	if cfg.Gateway.Scheduling.EffectiveSchedulableEnabled {
+		t.Fatalf("EffectiveSchedulableEnabled = true, want false")
+	}
+	if !cfg.Gateway.Scheduling.EffectiveSchedulableShadowEnabled {
+		t.Fatalf("EffectiveSchedulableShadowEnabled = false, want true")
+	}
+	if cfg.Gateway.Scheduling.EffectiveSchedulableTTFTDegradeThresholdMS != 15000 {
+		t.Fatalf("EffectiveSchedulableTTFTDegradeThresholdMS = %d, want 15000", cfg.Gateway.Scheduling.EffectiveSchedulableTTFTDegradeThresholdMS)
+	}
 	if cfg.Gateway.Scheduling.SlotCleanupInterval != 30*time.Second {
 		t.Fatalf("SlotCleanupInterval = %v, want 30s", cfg.Gateway.Scheduling.SlotCleanupInterval)
 	}

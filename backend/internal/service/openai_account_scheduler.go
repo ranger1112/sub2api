@@ -397,12 +397,13 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 }
 
 type openAIAccountCandidateScore struct {
-	account   *Account
-	loadInfo  *AccountLoadInfo
-	score     float64
-	errorRate float64
-	ttft      float64
-	hasTTFT   bool
+	account         *Account
+	loadInfo        *AccountLoadInfo
+	score           float64
+	errorRate       float64
+	ttft            float64
+	hasTTFT         bool
+	effectiveWeight float64
 }
 
 type openAIAccountCandidateHeap []openAIAccountCandidateScore
@@ -602,22 +603,35 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	filtered []*Account,
 	loadMap map[int64]*AccountLoadInfo,
 ) openAIAccountLoadPlan {
+	effectiveCfg := s.service.effectiveSchedulableConfig()
 	allCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
 	for _, account := range filtered {
 		loadInfo := loadMap[account.ID]
 		if loadInfo == nil {
 			loadInfo = &AccountLoadInfo{AccountID: account.ID}
 		}
+		effectiveDecision := s.service.evaluateOpenAIEffectiveSchedulable(account, "openai.advanced_scheduler")
+		if effectiveCfg.Enabled && !effectiveDecision.Schedulable {
+			continue
+		}
+		effectiveWeight := effectiveDecision.WeightMultiplier
+		if !effectiveCfg.Enabled {
+			effectiveWeight = 1
+		}
+		if effectiveWeight <= 0 {
+			effectiveWeight = 1
+		}
 		errorRate, ttft, hasTTFT := 0.0, 0.0, false
 		if s.stats != nil {
 			errorRate, ttft, hasTTFT = s.stats.snapshot(account.ID)
 		}
 		allCandidates = append(allCandidates, openAIAccountCandidateScore{
-			account:   account,
-			loadInfo:  loadInfo,
-			errorRate: errorRate,
-			ttft:      ttft,
-			hasTTFT:   hasTTFT,
+			account:         account,
+			loadInfo:        loadInfo,
+			errorRate:       errorRate,
+			ttft:            ttft,
+			hasTTFT:         hasTTFT,
+			effectiveWeight: effectiveWeight,
 		})
 	}
 
@@ -700,6 +714,9 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 			weights.Queue*queueFactor +
 			weights.ErrorRate*errorFactor +
 			weights.TTFT*ttftFactor
+		if item.effectiveWeight > 0 && item.effectiveWeight < 1 {
+			item.score *= item.effectiveWeight
+		}
 	}
 	plan.candidates = candidates
 
@@ -1087,14 +1104,24 @@ func (s *OpenAIGatewayService) getOpenAIAccountScheduler(ctx context.Context) Op
 		return nil
 	}
 	s.openaiSchedulerOnce.Do(func() {
-		if s.openaiAccountStats == nil {
-			s.openaiAccountStats = newOpenAIAccountRuntimeStats()
-		}
+		stats := s.ensureOpenAIAccountRuntimeStats()
 		if s.openaiScheduler == nil {
-			s.openaiScheduler = newDefaultOpenAIAccountScheduler(s, s.openaiAccountStats)
+			s.openaiScheduler = newDefaultOpenAIAccountScheduler(s, stats)
 		}
 	})
 	return s.openaiScheduler
+}
+
+func (s *OpenAIGatewayService) ensureOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
+	if s == nil {
+		return nil
+	}
+	s.openaiAccountStatsOnce.Do(func() {
+		if s.openaiAccountStats == nil {
+			s.openaiAccountStats = newOpenAIAccountRuntimeStats()
+		}
+	})
+	return s.openaiAccountStats
 }
 
 func resetOpenAIAdvancedSchedulerSettingCacheForTest() {
@@ -1275,11 +1302,11 @@ func (s *OpenAIGatewayService) isOpenAIAccountTransportCompatible(account *Accou
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64, success bool, firstTokenMs *int) {
-	scheduler := s.getOpenAIAccountScheduler(context.Background())
-	if scheduler == nil {
+	stats := s.ensureOpenAIAccountRuntimeStats()
+	if stats == nil {
 		return
 	}
-	scheduler.ReportResult(accountID, success, firstTokenMs)
+	stats.report(accountID, success, firstTokenMs)
 }
 
 func (s *OpenAIGatewayService) RecordOpenAIAccountSwitch() {

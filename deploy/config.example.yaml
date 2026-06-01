@@ -422,6 +422,14 @@ gateway:
     # Tiny in-process TTL for batch load reads in milliseconds (0 disables)
     # 调度批量负载读取的进程内短缓存 TTL（毫秒，0 表示禁用）
     load_batch_cache_ttl_ms: 200
+    # Runtime effective schedulability overlay. Shadow logs decisions only;
+    # enabled=true applies runtime filtering/degrade in the scheduler.
+    # 运行态 effective_schedulable：shadow 仅记录，enabled=true 才影响调度过滤/降权。
+    effective_schedulable_enabled: false
+    effective_schedulable_shadow_enabled: true
+    effective_schedulable_ttft_degrade_threshold_ms: 15000
+    effective_schedulable_error_rate_degrade_threshold: 0.5
+    effective_schedulable_error_rate_block_threshold: 0.95
     # Slot cleanup interval (duration)
     # 并发槽位清理周期（时间段）
     slot_cleanup_interval: 30s

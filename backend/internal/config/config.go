@@ -1043,6 +1043,14 @@ type GatewaySchedulingConfig struct {
 	// 负载计算
 	LoadBatchEnabled    bool `mapstructure:"load_batch_enabled"`
 	LoadBatchCacheTTLMS int  `mapstructure:"load_batch_cache_ttl_ms"`
+
+	// 运行态可调度性：默认只做 shadow 观测；开启 enabled 后才影响候选过滤/降权。
+	EffectiveSchedulableEnabled                   bool    `mapstructure:"effective_schedulable_enabled"`
+	EffectiveSchedulableShadowEnabled             bool    `mapstructure:"effective_schedulable_shadow_enabled"`
+	EffectiveSchedulableTTFTDegradeThresholdMS    int     `mapstructure:"effective_schedulable_ttft_degrade_threshold_ms"`
+	EffectiveSchedulableErrorRateDegradeThreshold float64 `mapstructure:"effective_schedulable_error_rate_degrade_threshold"`
+	EffectiveSchedulableErrorRateBlockThreshold   float64 `mapstructure:"effective_schedulable_error_rate_block_threshold"`
+
 	// 快照桶读取时的 MGET 分块大小
 	SnapshotMGetChunkSize int `mapstructure:"snapshot_mget_chunk_size"`
 	// 快照重建时的缓存写入分块大小
@@ -1882,6 +1890,11 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
 	viper.SetDefault("gateway.scheduling.load_batch_enabled", true)
 	viper.SetDefault("gateway.scheduling.load_batch_cache_ttl_ms", 200)
+	viper.SetDefault("gateway.scheduling.effective_schedulable_enabled", false)
+	viper.SetDefault("gateway.scheduling.effective_schedulable_shadow_enabled", true)
+	viper.SetDefault("gateway.scheduling.effective_schedulable_ttft_degrade_threshold_ms", 15000)
+	viper.SetDefault("gateway.scheduling.effective_schedulable_error_rate_degrade_threshold", 0.5)
+	viper.SetDefault("gateway.scheduling.effective_schedulable_error_rate_block_threshold", 0.95)
 	viper.SetDefault("gateway.scheduling.snapshot_mget_chunk_size", 128)
 	viper.SetDefault("gateway.scheduling.snapshot_write_chunk_size", 256)
 	viper.SetDefault("gateway.scheduling.slot_cleanup_interval", 30*time.Second)
@@ -2705,6 +2718,22 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.Scheduling.LoadBatchCacheTTLMS < 0 {
 		return fmt.Errorf("gateway.scheduling.load_batch_cache_ttl_ms must be non-negative")
+	}
+	if c.Gateway.Scheduling.EffectiveSchedulableTTFTDegradeThresholdMS < 0 {
+		return fmt.Errorf("gateway.scheduling.effective_schedulable_ttft_degrade_threshold_ms must be non-negative")
+	}
+	if c.Gateway.Scheduling.EffectiveSchedulableErrorRateDegradeThreshold < 0 ||
+		c.Gateway.Scheduling.EffectiveSchedulableErrorRateDegradeThreshold > 1 {
+		return fmt.Errorf("gateway.scheduling.effective_schedulable_error_rate_degrade_threshold must be between 0 and 1")
+	}
+	if c.Gateway.Scheduling.EffectiveSchedulableErrorRateBlockThreshold < 0 ||
+		c.Gateway.Scheduling.EffectiveSchedulableErrorRateBlockThreshold > 1 {
+		return fmt.Errorf("gateway.scheduling.effective_schedulable_error_rate_block_threshold must be between 0 and 1")
+	}
+	if c.Gateway.Scheduling.EffectiveSchedulableErrorRateBlockThreshold > 0 &&
+		c.Gateway.Scheduling.EffectiveSchedulableErrorRateDegradeThreshold > 0 &&
+		c.Gateway.Scheduling.EffectiveSchedulableErrorRateBlockThreshold < c.Gateway.Scheduling.EffectiveSchedulableErrorRateDegradeThreshold {
+		return fmt.Errorf("gateway.scheduling.effective_schedulable_error_rate_block_threshold must be >= effective_schedulable_error_rate_degrade_threshold")
 	}
 	if c.Gateway.Scheduling.SnapshotMGetChunkSize <= 0 {
 		return fmt.Errorf("gateway.scheduling.snapshot_mget_chunk_size must be positive")

@@ -73,8 +73,9 @@ type forceCacheBillingKeyType struct{}
 
 // accountWithLoad 账号与负载信息的组合，用于负载感知调度
 type accountWithLoad struct {
-	account  *Account
-	loadInfo *AccountLoadInfo
+	account         *Account
+	loadInfo        *AccountLoadInfo
+	effectiveWeight float64
 }
 
 var ForceCacheBillingContextKey = forceCacheBillingKeyType{}
@@ -1986,7 +1987,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		"reason", "sticky_not_used_falling_back_to_load_balance",
 		"total_accounts", len(accounts),
 	)
+	effectiveCfg := s.effectiveSchedulableConfig()
 	candidates := make([]*Account, 0, len(accounts))
+	effectiveWeights := make(map[int64]float64, len(accounts))
 	for i := range accounts {
 		acc := &accounts[i]
 		if isExcluded(acc.ID) {
@@ -2019,6 +2022,18 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 			continue
 		}
+		effectiveDecision := s.evaluateEffectiveSchedulable(acc, "gateway.load_aware")
+		if effectiveCfg.Enabled && !effectiveDecision.Schedulable {
+			continue
+		}
+		weight := effectiveDecision.WeightMultiplier
+		if !effectiveCfg.Enabled {
+			weight = 1
+		}
+		if weight <= 0 {
+			weight = 1
+		}
+		effectiveWeights[acc.ID] = weight
 		candidates = append(candidates, acc)
 	}
 
@@ -2050,8 +2065,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 			if loadInfo.LoadRate < 100 {
 				available = append(available, accountWithLoad{
-					account:  acc,
-					loadInfo: loadInfo,
+					account:         acc,
+					loadInfo:        loadInfo,
+					effectiveWeight: effectiveWeights[acc.ID],
 				})
 			}
 		}
@@ -2141,13 +2157,34 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 		return s.cfg.Gateway.Scheduling
 	}
 	return config.GatewaySchedulingConfig{
-		StickySessionMaxWaiting:  3,
-		StickySessionWaitTimeout: 45 * time.Second,
-		FallbackWaitTimeout:      30 * time.Second,
-		FallbackMaxWaiting:       100,
-		LoadBatchEnabled:         true,
-		SlotCleanupInterval:      30 * time.Second,
+		StickySessionMaxWaiting:                       3,
+		StickySessionWaitTimeout:                      45 * time.Second,
+		FallbackWaitTimeout:                           30 * time.Second,
+		FallbackMaxWaiting:                            100,
+		LoadBatchEnabled:                              true,
+		EffectiveSchedulableShadowEnabled:             true,
+		EffectiveSchedulableTTFTDegradeThresholdMS:    defaultEffectiveSchedulableTTFTThresholdMS,
+		EffectiveSchedulableErrorRateDegradeThreshold: 0.5,
+		EffectiveSchedulableErrorRateBlockThreshold:   0.95,
+		SlotCleanupInterval:                           30 * time.Second,
 	}
+}
+
+func (s *GatewayService) effectiveSchedulableConfig() EffectiveSchedulableConfig {
+	return effectiveSchedulableConfigFromScheduling(s.schedulingConfig())
+}
+
+func (s *GatewayService) evaluateEffectiveSchedulable(account *Account, scope string) EffectiveSchedulableDecision {
+	cfg := s.effectiveSchedulableConfig()
+	decision := EvaluateEffectiveSchedulable(account, EffectiveSchedulableRuntimeHealth{}, time.Now(), cfg)
+	if cfg.ShadowEnabled {
+		accountID := int64(0)
+		if account != nil {
+			accountID = account.ID
+		}
+		logEffectiveSchedulableShadow(scope, accountID, decision, cfg.Enabled)
+	}
+	return decision
 }
 
 func (s *GatewayService) withGroupContext(ctx context.Context, group *Group) context.Context {
@@ -2800,15 +2837,16 @@ func filterByMinLoadRate(accounts []accountWithLoad) []accountWithLoad {
 	if len(accounts) == 0 {
 		return accounts
 	}
-	minLoadRate := accounts[0].loadInfo.LoadRate
+	minLoadRate := effectiveLoadRate(accounts[0].loadInfo.LoadRate, accounts[0].effectiveWeight)
 	for _, acc := range accounts[1:] {
-		if acc.loadInfo.LoadRate < minLoadRate {
-			minLoadRate = acc.loadInfo.LoadRate
+		loadRate := effectiveLoadRate(acc.loadInfo.LoadRate, acc.effectiveWeight)
+		if loadRate < minLoadRate {
+			minLoadRate = loadRate
 		}
 	}
 	result := make([]accountWithLoad, 0, len(accounts))
 	for _, acc := range accounts {
-		if acc.loadInfo.LoadRate == minLoadRate {
+		if effectiveLoadRate(acc.loadInfo.LoadRate, acc.effectiveWeight) == minLoadRate {
 			result = append(result, acc)
 		}
 	}

@@ -35,6 +35,9 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
 
+	if account != nil && account.Platform == PlatformOpenAI {
+		s.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+	}
 	if statusCode == http.StatusTooManyRequests {
 		s.markOpenAIOAuth429RateLimited(stateCtx, account, headers, responseBody)
 	}
@@ -116,23 +119,28 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
+	return s.openAIAccountRuntimeBlockUntilValue(account) != nil
+}
+
+func (s *OpenAIGatewayService) openAIAccountRuntimeBlockUntilValue(account *Account) *time.Time {
 	if s == nil || !isOpenAIAccount(account) {
-		return false
+		return nil
 	}
 	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	if !ok {
-		return false
+		return nil
 	}
 	cooldownUntil, ok := value.(time.Time)
 	if !ok || cooldownUntil.IsZero() {
 		s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-		return false
+		return nil
 	}
 	if time.Now().Before(cooldownUntil) {
-		return true
+		until := cooldownUntil
+		return &until
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-	return false
+	return nil
 }
 
 func (s *OpenAIGatewayService) recordOpenAIOAuth429() {
