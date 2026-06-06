@@ -625,6 +625,16 @@ SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) FROM (
                WHERE ag.account_id = a.id
                  AND g.deleted_at IS NULL
            ), '[]'::json) AS group_names,
+           EXISTS (
+               SELECT 1
+               FROM account_groups ag
+               JOIN groups g ON g.id = ag.group_id
+               WHERE ag.account_id = a.id
+                 AND g.deleted_at IS NULL
+                 AND g.platform = 'openai'
+                 AND g.name NOT IN ('codex-plus', 'codex-free')
+                 AND g.subscription_type IS DISTINCT FROM 'standard'
+           ) AS has_protected_manual_group,
            expires_at AS account_expires_at,
            auto_pause_on_expired
     FROM accounts a
@@ -682,12 +692,13 @@ WHERE deleted_at IS NULL
             bad_plan_type.append([email, row.get("id"), expected_plan, row.get("plan_type")])
         if expected_plan in ("plus", "free"):
             actual_groups = sorted(str(name) for name in (row.get("group_names") or []))
-            if expected_plan == "plus":
-                expected_groups = sorted(["codex-plus", *subscription_group_names])
-            else:
-                expected_groups = ["codex-free"]
-            if actual_groups != expected_groups:
-                bad_plan_groups.append([email, row.get("id"), expected_plan, expected_groups, actual_groups])
+            if not row.get("has_protected_manual_group"):
+                if expected_plan == "plus":
+                    expected_groups = sorted(["codex-plus", *subscription_group_names])
+                else:
+                    expected_groups = ["codex-free"]
+                if actual_groups != expected_groups:
+                    bad_plan_groups.append([email, row.get("id"), expected_plan, expected_groups, actual_groups])
             if expected_plan == "free" and row.get("proxy_id") is None:
                 bad_free_proxy.append([email, row.get("id")])
         if not args.keep_account_expires and row.get("account_expires_at") is not None:

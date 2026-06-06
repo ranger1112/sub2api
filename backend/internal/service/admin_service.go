@@ -2661,7 +2661,8 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.AutoPauseOnExpired = *input.AutoPauseOnExpired
 	}
 
-	if input.GroupIDs == nil {
+	_, planTypeProvided := input.Credentials["plan_type"]
+	if input.GroupIDs == nil && planTypeProvided {
 		if planGroupIDs, err := s.defaultOpenAIPlanGroupIDs(ctx, account.Platform, account.Type, account.Credentials); err != nil {
 			return nil, err
 		} else if len(planGroupIDs) > 0 {

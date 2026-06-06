@@ -163,3 +163,27 @@ func TestAdminServiceUpdateAccount_DefaultGroupsWhenCredentialsPlanChanges(t *te
 	require.Equal(t, int64(201), updated.ID)
 	require.ElementsMatch(t, []int64{3, 4, 5, 6}, repo.boundGroups[201])
 }
+
+func TestAdminServiceUpdateAccount_UnrelatedUpdatePreservesExistingGroups(t *testing.T) {
+	repo := &accountRepoStubForPlanGroups{
+		byID: map[int64]*Account{
+			202: {
+				ID:          202,
+				Name:        "plus@example.com",
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Credentials: map[string]any{"plan_type": "plus"},
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo, groupRepo: openAIPlanGroupTestRepo()}
+
+	updated, err := svc.UpdateAccount(context.Background(), 202, &UpdateAccountInput{
+		Name: "renamed@example.com",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(202), updated.ID)
+	require.Equal(t, "renamed@example.com", updated.Name)
+	require.Empty(t, repo.boundGroups)
+}
