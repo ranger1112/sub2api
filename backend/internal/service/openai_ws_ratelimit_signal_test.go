@@ -138,10 +138,10 @@ func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitFailsOverInPoolMod
 		Status:      StatusActive,
 		Schedulable: true,
 		Concurrency: 1,
-		Mode:        AccountModePool,
 		Credentials: map[string]any{
-			"api_key":  "sk-test",
-			"base_url": wsServer.URL,
+			"api_key":   "sk-test",
+			"base_url":  wsServer.URL,
+			"pool_mode": true,
 		},
 		Extra: map[string]any{
 			"responses_websockets_v2_enabled": true,

@@ -4393,7 +4393,10 @@ func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Contex
 	if !isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
 		return
 	}
-	s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusTooManyRequests, headers, responseBody)
+	stateCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	s.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+	s.rateLimitService.handle429(stateCtx, account, headers, responseBody)
 }
 
 func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (string, bool) {
