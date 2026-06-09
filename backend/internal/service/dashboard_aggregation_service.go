@@ -9,6 +9,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
 const (
@@ -37,6 +38,10 @@ type DashboardAggregationRepository interface {
 	CleanupUsageLogs(ctx context.Context, cutoff time.Time) error
 	CleanupUsageBillingDedup(ctx context.Context, cutoff time.Time) error
 	EnsureUsageLogsPartitions(ctx context.Context, now time.Time) error
+	// GetGroupUsageSummary 走 usage_dashboard_group_daily 预聚合表（历史）+
+	// usage_logs（今日增量）混合查询，规避对 usage_logs 的全表 SUM 扫描。
+	// todayStart 为调用方时区的当日起点，作为「历史」与「今日」的分割点。
+	GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error)
 }
 
 // DashboardAggregationService 负责定时聚合与回填。

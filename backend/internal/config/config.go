@@ -1297,6 +1297,13 @@ type DashboardCacheConfig struct {
 	StatsTTLSeconds int `mapstructure:"stats_ttl_seconds"`
 	// StatsRefreshTimeoutSeconds: 异步刷新超时（秒）
 	StatsRefreshTimeoutSeconds int `mapstructure:"stats_refresh_timeout_seconds"`
+	// GroupSummaryTTLSeconds: group 用量摘要（管理员分组列表）缓存 TTL（秒）。
+	// 默认 60 秒；设为 0 表示禁用该缓存，回退到每次查询实时全量聚合。
+	GroupSummaryTTLSeconds int `mapstructure:"group_summary_ttl_seconds"`
+	// GroupSummaryUseAggregation: 是否启用 group_daily 预聚合表 + usage_logs 增量混合查询。
+	// 默认 false（保持原全表 SUM 行为）；开启后查询走 usage_dashboard_group_daily（历史）
+	// 与 usage_logs（今日增量）混合，规避全表扫描，但需要预聚合表已有完整历史数据。
+	GroupSummaryUseAggregation bool `mapstructure:"group_summary_use_aggregation"`
 }
 
 // DashboardAggregationConfig 仪表盘预聚合配置
@@ -1779,6 +1786,7 @@ func setDefaults() {
 	viper.SetDefault("dashboard_cache.stats_fresh_ttl_seconds", 15)
 	viper.SetDefault("dashboard_cache.stats_ttl_seconds", 30)
 	viper.SetDefault("dashboard_cache.stats_refresh_timeout_seconds", 30)
+	viper.SetDefault("dashboard_cache.group_summary_ttl_seconds", 60)
 
 	// Dashboard aggregation
 	viper.SetDefault("dashboard_aggregation.enabled", true)
@@ -2313,6 +2321,9 @@ func (c *Config) Validate() error {
 		if c.Dashboard.StatsFreshTTLSeconds > c.Dashboard.StatsTTLSeconds {
 			return fmt.Errorf("dashboard_cache.stats_fresh_ttl_seconds must be <= dashboard_cache.stats_ttl_seconds")
 		}
+		if c.Dashboard.GroupSummaryTTLSeconds < 0 {
+			return fmt.Errorf("dashboard_cache.group_summary_ttl_seconds must be non-negative")
+		}
 	} else {
 		if c.Dashboard.StatsFreshTTLSeconds < 0 {
 			return fmt.Errorf("dashboard_cache.stats_fresh_ttl_seconds must be non-negative")
@@ -2322,6 +2333,9 @@ func (c *Config) Validate() error {
 		}
 		if c.Dashboard.StatsRefreshTimeoutSeconds < 0 {
 			return fmt.Errorf("dashboard_cache.stats_refresh_timeout_seconds must be non-negative")
+		}
+		if c.Dashboard.GroupSummaryTTLSeconds < 0 {
+			return fmt.Errorf("dashboard_cache.group_summary_ttl_seconds must be non-negative")
 		}
 	}
 	if c.DashboardAgg.Enabled {

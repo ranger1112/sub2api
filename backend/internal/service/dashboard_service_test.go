@@ -16,15 +16,19 @@ import (
 
 type usageRepoStub struct {
 	UsageLogRepository
-	stats      *usagestats.DashboardStats
-	rangeStats *usagestats.DashboardStats
-	err        error
-	rangeErr   error
-	calls      int32
-	rangeCalls int32
-	rangeStart time.Time
-	rangeEnd   time.Time
-	onCall     chan struct{}
+	stats                  *usagestats.DashboardStats
+	rangeStats             *usagestats.DashboardStats
+	err                    error
+	rangeErr               error
+	calls                  int32
+	rangeCalls             int32
+	rangeStart             time.Time
+	rangeEnd               time.Time
+	onCall                 chan struct{}
+	groupSummaries         []usagestats.GroupUsageSummary
+	groupSummaryErr        error
+	groupSummaryCalls      int32
+	groupSummaryTodayStart time.Time
 }
 
 func (s *usageRepoStub) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
@@ -54,15 +58,32 @@ func (s *usageRepoStub) GetDashboardStatsWithRange(ctx context.Context, start, e
 	return s.stats, nil
 }
 
+func (s *usageRepoStub) GetAllGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	atomic.AddInt32(&s.groupSummaryCalls, 1)
+	s.groupSummaryTodayStart = todayStart
+	if s.groupSummaryErr != nil {
+		return nil, s.groupSummaryErr
+	}
+	return s.groupSummaries, nil
+}
+
 type dashboardCacheStub struct {
-	get       func(ctx context.Context) (string, error)
-	set       func(ctx context.Context, data string, ttl time.Duration) error
-	del       func(ctx context.Context) error
-	getCalls  int32
-	setCalls  int32
-	delCalls  int32
-	lastSetMu sync.Mutex
-	lastSet   string
+	get                  func(ctx context.Context) (string, error)
+	set                  func(ctx context.Context, data string, ttl time.Duration) error
+	del                  func(ctx context.Context) error
+	getGroupSummary      func(ctx context.Context, todayStart time.Time) (string, error)
+	setGroupSummary      func(ctx context.Context, todayStart time.Time, data string, ttl time.Duration) error
+	getCalls             int32
+	setCalls             int32
+	delCalls             int32
+	groupSummaryGetCalls int32
+	groupSummarySetCalls int32
+	lastSetMu            sync.Mutex
+	lastSet              string
+	lastGroupSummaryMu   sync.Mutex
+	lastGroupSummarySet  string
+	lastGroupSummaryTTL  time.Duration
+	lastGroupSummaryKey  time.Time
 }
 
 func (c *dashboardCacheStub) GetDashboardStats(ctx context.Context) (string, error) {
@@ -92,9 +113,34 @@ func (c *dashboardCacheStub) DeleteDashboardStats(ctx context.Context) error {
 	return nil
 }
 
+func (c *dashboardCacheStub) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) (string, error) {
+	atomic.AddInt32(&c.groupSummaryGetCalls, 1)
+	if c.getGroupSummary != nil {
+		return c.getGroupSummary(ctx, todayStart)
+	}
+	return "", ErrDashboardStatsCacheMiss
+}
+
+func (c *dashboardCacheStub) SetGroupUsageSummary(ctx context.Context, todayStart time.Time, data string, ttl time.Duration) error {
+	atomic.AddInt32(&c.groupSummarySetCalls, 1)
+	c.lastGroupSummaryMu.Lock()
+	c.lastGroupSummarySet = data
+	c.lastGroupSummaryTTL = ttl
+	c.lastGroupSummaryKey = todayStart
+	c.lastGroupSummaryMu.Unlock()
+	if c.setGroupSummary != nil {
+		return c.setGroupSummary(ctx, todayStart, data, ttl)
+	}
+	return nil
+}
+
 type dashboardAggregationRepoStub struct {
-	watermark time.Time
-	err       error
+	watermark              time.Time
+	err                    error
+	groupSummaries         []usagestats.GroupUsageSummary
+	groupSummaryErr        error
+	groupSummaryCalls      int32
+	groupSummaryTodayStart time.Time
 }
 
 func (s *dashboardAggregationRepoStub) AggregateRange(ctx context.Context, start, end time.Time) error {
@@ -130,6 +176,15 @@ func (s *dashboardAggregationRepoStub) CleanupUsageBillingDedup(ctx context.Cont
 
 func (s *dashboardAggregationRepoStub) EnsureUsageLogsPartitions(ctx context.Context, now time.Time) error {
 	return nil
+}
+
+func (s *dashboardAggregationRepoStub) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	atomic.AddInt32(&s.groupSummaryCalls, 1)
+	s.groupSummaryTodayStart = todayStart
+	if s.groupSummaryErr != nil {
+		return nil, s.groupSummaryErr
+	}
+	return s.groupSummaries, nil
 }
 
 func (c *dashboardCacheStub) readLastEntry(t *testing.T) dashboardStatsCacheEntry {
@@ -392,4 +447,268 @@ func TestDashboardService_AggDisabled_UsesUsageLogsFallback(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&repo.rangeCalls))
 	require.False(t, repo.rangeEnd.IsZero())
 	require.Equal(t, truncateToDayUTC(repo.rangeEnd.AddDate(0, 0, -7)), repo.rangeStart)
+}
+
+// --- GroupUsageSummary cache tests (Stage 1) ---
+
+func TestDashboardService_GroupSummary_CacheMissThenFallbackAndStore(t *testing.T) {
+	summaries := []usagestats.GroupUsageSummary{
+		{GroupID: 1, TotalCost: 12.5, TodayCost: 3.5},
+		{GroupID: 2, TotalCost: 0, TodayCost: 0},
+	}
+	cache := &dashboardCacheStub{
+		getGroupSummary: func(ctx context.Context, todayStart time.Time) (string, error) {
+			return "", ErrDashboardStatsCacheMiss
+		},
+	}
+	repo := &usageRepoStub{groupSummaries: summaries}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                true,
+			GroupSummaryTTLSeconds: 60,
+		},
+	}
+	svc := NewDashboardService(repo, nil, cache, cfg)
+
+	todayStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
+	got, err := svc.GetGroupUsageSummary(context.Background(), todayStart)
+	require.NoError(t, err)
+	require.Equal(t, summaries, got)
+	require.Equal(t, int32(1), atomic.LoadInt32(&repo.groupSummaryCalls))
+	require.Equal(t, int32(1), atomic.LoadInt32(&cache.groupSummaryGetCalls))
+	require.Equal(t, int32(1), atomic.LoadInt32(&cache.groupSummarySetCalls))
+
+	cache.lastGroupSummaryMu.Lock()
+	defer cache.lastGroupSummaryMu.Unlock()
+	require.Equal(t, 60*time.Second, cache.lastGroupSummaryTTL)
+	require.Equal(t, todayStart, cache.lastGroupSummaryKey)
+
+	var entry groupUsageSummaryCacheEntry
+	require.NoError(t, json.Unmarshal([]byte(cache.lastGroupSummarySet), &entry))
+	require.Equal(t, summaries, entry.Summaries)
+	require.WithinDuration(t, time.Now(), time.Unix(entry.UpdatedAt, 0), 2*time.Second)
+}
+
+func TestDashboardService_GroupSummary_CacheHitSkipsRepo(t *testing.T) {
+	summaries := []usagestats.GroupUsageSummary{
+		{GroupID: 7, TotalCost: 100, TodayCost: 10},
+	}
+	entry := groupUsageSummaryCacheEntry{
+		Summaries: summaries,
+		UpdatedAt: time.Now().Unix(),
+	}
+	payload, err := json.Marshal(entry)
+	require.NoError(t, err)
+
+	cache := &dashboardCacheStub{
+		getGroupSummary: func(ctx context.Context, todayStart time.Time) (string, error) {
+			return string(payload), nil
+		},
+	}
+	repo := &usageRepoStub{
+		groupSummaries:  []usagestats.GroupUsageSummary{{GroupID: 999}},
+		groupSummaryErr: errors.New("repo must not be called"),
+	}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                true,
+			GroupSummaryTTLSeconds: 60,
+		},
+	}
+	svc := NewDashboardService(repo, nil, cache, cfg)
+
+	todayStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
+	got, err := svc.GetGroupUsageSummary(context.Background(), todayStart)
+	require.NoError(t, err)
+	require.Equal(t, summaries, got)
+	require.Equal(t, int32(0), atomic.LoadInt32(&repo.groupSummaryCalls))
+	require.Equal(t, int32(1), atomic.LoadInt32(&cache.groupSummaryGetCalls))
+	require.Equal(t, int32(0), atomic.LoadInt32(&cache.groupSummarySetCalls))
+}
+
+func TestDashboardService_GroupSummary_TTLZeroDisablesCache(t *testing.T) {
+	summaries := []usagestats.GroupUsageSummary{{GroupID: 1, TotalCost: 5, TodayCost: 1}}
+	cache := &dashboardCacheStub{
+		getGroupSummary: func(ctx context.Context, todayStart time.Time) (string, error) {
+			t.Fatal("cache 不应该被读取")
+			return "", nil
+		},
+		setGroupSummary: func(ctx context.Context, todayStart time.Time, data string, ttl time.Duration) error {
+			t.Fatal("cache 不应该被写入")
+			return nil
+		},
+	}
+	repo := &usageRepoStub{groupSummaries: summaries}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                true,
+			GroupSummaryTTLSeconds: 0, // 显式禁用
+		},
+	}
+	svc := NewDashboardService(repo, nil, cache, cfg)
+
+	got, err := svc.GetGroupUsageSummary(context.Background(), time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Equal(t, summaries, got)
+	require.Equal(t, int32(1), atomic.LoadInt32(&repo.groupSummaryCalls))
+	require.Equal(t, int32(0), atomic.LoadInt32(&cache.groupSummaryGetCalls))
+	require.Equal(t, int32(0), atomic.LoadInt32(&cache.groupSummarySetCalls))
+}
+
+func TestDashboardService_GroupSummary_DifferentTodayStartIndependentCache(t *testing.T) {
+	// 模拟两个不同时区调用方传入两个不同 todayStart，
+	// 验证：cache 读取按 todayStart 区分，且写入时携带的 key 各自独立。
+	var observed []time.Time
+	var mu sync.Mutex
+	cache := &dashboardCacheStub{
+		getGroupSummary: func(ctx context.Context, todayStart time.Time) (string, error) {
+			mu.Lock()
+			observed = append(observed, todayStart)
+			mu.Unlock()
+			return "", ErrDashboardStatsCacheMiss
+		},
+	}
+	repo := &usageRepoStub{groupSummaries: []usagestats.GroupUsageSummary{{GroupID: 1}}}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                true,
+			GroupSummaryTTLSeconds: 60,
+		},
+	}
+	svc := NewDashboardService(repo, nil, cache, cfg)
+
+	utcStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
+	shanghaiStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*3600))
+
+	_, err := svc.GetGroupUsageSummary(context.Background(), utcStart)
+	require.NoError(t, err)
+	_, err = svc.GetGroupUsageSummary(context.Background(), shanghaiStart)
+	require.NoError(t, err)
+
+	require.Equal(t, int32(2), atomic.LoadInt32(&cache.groupSummaryGetCalls))
+	require.Equal(t, int32(2), atomic.LoadInt32(&cache.groupSummarySetCalls))
+	require.Equal(t, int32(2), atomic.LoadInt32(&repo.groupSummaryCalls))
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, observed, 2)
+	require.False(t, observed[0].Equal(observed[1]), "两次 todayStart 应该不同，让缓存键自然区分")
+}
+
+func TestDashboardService_GroupSummary_CacheParseError_FallbackToRepo(t *testing.T) {
+	summaries := []usagestats.GroupUsageSummary{{GroupID: 1, TotalCost: 3, TodayCost: 1}}
+	cache := &dashboardCacheStub{
+		getGroupSummary: func(ctx context.Context, todayStart time.Time) (string, error) {
+			return "not-json", nil
+		},
+	}
+	repo := &usageRepoStub{groupSummaries: summaries}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                true,
+			GroupSummaryTTLSeconds: 60,
+		},
+	}
+	svc := NewDashboardService(repo, nil, cache, cfg)
+
+	got, err := svc.GetGroupUsageSummary(context.Background(), time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Equal(t, summaries, got)
+	require.Equal(t, int32(1), atomic.LoadInt32(&repo.groupSummaryCalls))
+	require.Equal(t, int32(1), atomic.LoadInt32(&cache.groupSummaryGetCalls))
+	// 解析失败也会写回新缓存覆盖坏数据
+	require.Equal(t, int32(1), atomic.LoadInt32(&cache.groupSummarySetCalls))
+}
+
+// --- Stage 2 Sub-PR 2: GroupUsageSummary 数据源路由测试 ---
+
+func TestDashboardService_GroupSummary_UseAggregation_RoutesToAggRepo(t *testing.T) {
+	aggSummaries := []usagestats.GroupUsageSummary{{GroupID: 1, TotalCost: 100, TodayCost: 5}}
+	aggRepo := &dashboardAggregationRepoStub{
+		watermark:      time.Unix(0, 0).UTC(),
+		groupSummaries: aggSummaries,
+	}
+	usageRepo := &usageRepoStub{
+		groupSummaries:  []usagestats.GroupUsageSummary{{GroupID: 999}},
+		groupSummaryErr: errors.New("usage repo must not be called when aggregation enabled"),
+	}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                    false, // 关 cache 排除干扰
+			GroupSummaryUseAggregation: true,
+		},
+	}
+	svc := NewDashboardService(usageRepo, aggRepo, nil, cfg)
+
+	todayStart := time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)
+	got, err := svc.GetGroupUsageSummary(context.Background(), todayStart)
+	require.NoError(t, err)
+	require.Equal(t, aggSummaries, got)
+	require.Equal(t, int32(1), atomic.LoadInt32(&aggRepo.groupSummaryCalls))
+	require.Equal(t, todayStart, aggRepo.groupSummaryTodayStart)
+	require.Equal(t, int32(0), atomic.LoadInt32(&usageRepo.groupSummaryCalls))
+}
+
+func TestDashboardService_GroupSummary_UseAggregationDisabled_StaysOnUsageRepo(t *testing.T) {
+	usageSummaries := []usagestats.GroupUsageSummary{{GroupID: 1, TotalCost: 50, TodayCost: 2}}
+	aggRepo := &dashboardAggregationRepoStub{
+		watermark:       time.Unix(0, 0).UTC(),
+		groupSummaryErr: errors.New("agg repo must not be called when flag disabled"),
+	}
+	usageRepo := &usageRepoStub{groupSummaries: usageSummaries}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                    false,
+			GroupSummaryUseAggregation: false, // 显式关闭
+		},
+	}
+	svc := NewDashboardService(usageRepo, aggRepo, nil, cfg)
+
+	got, err := svc.GetGroupUsageSummary(context.Background(), time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Equal(t, usageSummaries, got)
+	require.Equal(t, int32(0), atomic.LoadInt32(&aggRepo.groupSummaryCalls))
+	require.Equal(t, int32(1), atomic.LoadInt32(&usageRepo.groupSummaryCalls))
+}
+
+func TestDashboardService_GroupSummary_UseAggregation_AggRepoError_Surfaces(t *testing.T) {
+	aggRepo := &dashboardAggregationRepoStub{
+		watermark:       time.Unix(0, 0).UTC(),
+		groupSummaryErr: errors.New("agg query exploded"),
+	}
+	usageRepo := &usageRepoStub{
+		groupSummaries:  []usagestats.GroupUsageSummary{{GroupID: 1, TotalCost: 1}},
+		groupSummaryErr: errors.New("usage repo must not be called when aggregation enabled"),
+	}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                    false,
+			GroupSummaryUseAggregation: true,
+		},
+	}
+	svc := NewDashboardService(usageRepo, aggRepo, nil, cfg)
+
+	_, err := svc.GetGroupUsageSummary(context.Background(), time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC))
+	require.Error(t, err, "聚合路径错误应直接返回，feature flag 是回退开关，不在错误时自动 fallback")
+	require.Contains(t, err.Error(), "agg query exploded")
+	require.Equal(t, int32(1), atomic.LoadInt32(&aggRepo.groupSummaryCalls))
+	require.Equal(t, int32(0), atomic.LoadInt32(&usageRepo.groupSummaryCalls))
+}
+
+func TestDashboardService_GroupSummary_UseAggregation_NilAggRepoFallsBack(t *testing.T) {
+	// 即使 flag=true，aggRepo=nil 也应自动回退到 usageRepo，避免空指针。
+	usageSummaries := []usagestats.GroupUsageSummary{{GroupID: 1, TotalCost: 7, TodayCost: 1}}
+	usageRepo := &usageRepoStub{groupSummaries: usageSummaries}
+	cfg := &config.Config{
+		Dashboard: config.DashboardCacheConfig{
+			Enabled:                    false,
+			GroupSummaryUseAggregation: true,
+		},
+	}
+	svc := NewDashboardService(usageRepo, nil, nil, cfg)
+
+	got, err := svc.GetGroupUsageSummary(context.Background(), time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Equal(t, usageSummaries, got)
+	require.Equal(t, int32(1), atomic.LoadInt32(&usageRepo.groupSummaryCalls))
 }

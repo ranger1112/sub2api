@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,6 +92,10 @@ func (s *dashboardRepoStub) CleanupUsageBillingDedup(ctx context.Context, cutoff
 
 func (s *dashboardRepoStub) EnsureUsageLogsPartitions(ctx context.Context, now time.Time) error {
 	return nil
+}
+
+func (s *dashboardRepoStub) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	return nil, nil
 }
 
 func (s *cleanupRepoStub) CreateTask(ctx context.Context, task *UsageCleanupTask) error {

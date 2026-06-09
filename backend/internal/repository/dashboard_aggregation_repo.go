@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
@@ -96,6 +97,9 @@ func (r *dashboardAggregationRepository) aggregateRangeInTx(ctx context.Context,
 	if err := r.upsertDailyAggregates(ctx, dayStart, dayEnd); err != nil {
 		return err
 	}
+	if err := r.upsertGroupDailyAggregates(ctx, dayStart, dayEnd); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -152,6 +156,9 @@ func (r *dashboardAggregationRepository) recomputeRangeInTx(ctx context.Context,
 	if _, err := r.sql.ExecContext(ctx, "DELETE FROM usage_dashboard_daily_users WHERE bucket_date >= $1::date AND bucket_date < $2::date", dayStart, dayEnd); err != nil {
 		return err
 	}
+	if _, err := r.sql.ExecContext(ctx, "DELETE FROM usage_dashboard_group_daily WHERE bucket_date >= $1::date AND bucket_date < $2::date", dayStart, dayEnd); err != nil {
+		return err
+	}
 
 	if err := r.insertHourlyActiveUsers(ctx, hourStart, hourEnd); err != nil {
 		return err
@@ -163,6 +170,9 @@ func (r *dashboardAggregationRepository) recomputeRangeInTx(ctx context.Context,
 		return err
 	}
 	if err := r.upsertDailyAggregates(ctx, dayStart, dayEnd); err != nil {
+		return err
+	}
+	if err := r.upsertGroupDailyAggregates(ctx, dayStart, dayEnd); err != nil {
 		return err
 	}
 	return nil
@@ -204,6 +214,9 @@ func (r *dashboardAggregationRepository) CleanupAggregates(ctx context.Context, 
 		return err
 	}
 	if _, err := r.sql.ExecContext(ctx, "DELETE FROM usage_dashboard_daily_users WHERE bucket_date < $1::date", dailyCutoffUTC); err != nil {
+		return err
+	}
+	if _, err := r.sql.ExecContext(ctx, "DELETE FROM usage_dashboard_group_daily WHERE bucket_date < $1::date", dailyCutoffUTC); err != nil {
 		return err
 	}
 	return nil
@@ -460,6 +473,123 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 	`
 	_, err := r.sql.ExecContext(ctx, query, start, end, start, end, tzName)
 	return err
+}
+
+// upsertGroupDailyAggregates 按 (bucket_date, group_id) 维度从 usage_logs 直接聚合写入
+// usage_dashboard_group_daily。与 upsertDailyAggregates 并存而不重复造表的原因：
+//   - 全局 daily 表无 group 维度，admin GroupUsageSummary 需要 per-group 累计
+//   - 直接从 usage_logs 聚合（不复用 hourly）避免再加 hourly_group 中间表，降低维护成本
+//   - GROUP BY 1（bucket_date）与 hourly upsert 的时区处理保持一致
+//
+// group_id IS NULL 的请求（未关联分组）被有意排除，admin 列表视图本来就不展示这类条目。
+func (r *dashboardAggregationRepository) upsertGroupDailyAggregates(ctx context.Context, start, end time.Time) error {
+	tzName := timezone.Name()
+	query := `
+		WITH daily_group AS (
+			SELECT
+				(date_trunc('day', created_at AT TIME ZONE $3) AT TIME ZONE $3)::date AS bucket_date,
+				group_id,
+				COUNT(*) AS total_requests,
+				COALESCE(SUM(input_tokens), 0) AS input_tokens,
+				COALESCE(SUM(output_tokens), 0) AS output_tokens,
+				COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens,
+				COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+				COALESCE(SUM(total_cost), 0) AS total_cost,
+				COALESCE(SUM(actual_cost), 0) AS actual_cost
+			FROM usage_logs
+			WHERE created_at >= $1 AND created_at < $2 AND group_id IS NOT NULL
+			GROUP BY 1, group_id
+		)
+		INSERT INTO usage_dashboard_group_daily (
+			bucket_date,
+			group_id,
+			total_requests,
+			input_tokens,
+			output_tokens,
+			cache_creation_tokens,
+			cache_read_tokens,
+			total_cost,
+			actual_cost,
+			computed_at
+		)
+		SELECT
+			bucket_date,
+			group_id,
+			total_requests,
+			input_tokens,
+			output_tokens,
+			cache_creation_tokens,
+			cache_read_tokens,
+			total_cost,
+			actual_cost,
+			NOW()
+		FROM daily_group
+		ON CONFLICT (bucket_date, group_id)
+		DO UPDATE SET
+			total_requests = EXCLUDED.total_requests,
+			input_tokens = EXCLUDED.input_tokens,
+			output_tokens = EXCLUDED.output_tokens,
+			cache_creation_tokens = EXCLUDED.cache_creation_tokens,
+			cache_read_tokens = EXCLUDED.cache_read_tokens,
+			total_cost = EXCLUDED.total_cost,
+			actual_cost = EXCLUDED.actual_cost,
+			computed_at = EXCLUDED.computed_at
+	`
+	_, err := r.sql.ExecContext(ctx, query, start, end, tzName)
+	return err
+}
+
+// GetGroupUsageSummary 走 usage_dashboard_group_daily（历史 bucket_date < todayStart）
+// + usage_logs（今日 created_at >= todayStart）混合查询。
+//
+// 输出结构与原 usageLogRepository.GetAllGroupUsageSummary 完全一致：每个 group 一条记录，
+// total_cost = 历史累计 + 今日；today_cost 仅含今日。LEFT JOIN groups 保证所有分组都返回，
+// 包括今天没有用量的；today_cost 与 hist_cost 各自 COALESCE 空值为 0。
+//
+// 该路径避免对 usage_logs 做无 WHERE 全表 SUM——历史部分走主键扫描的小表
+// (usage_dashboard_group_daily)，今日部分走 (group_id, created_at) 索引。
+func (r *dashboardAggregationRepository) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	if r == nil || r.sql == nil {
+		return nil, nil
+	}
+	query := `
+		WITH historical AS (
+			SELECT group_id, SUM(actual_cost) AS hist_cost
+			FROM usage_dashboard_group_daily
+			WHERE bucket_date < $1::date
+			GROUP BY group_id
+		),
+		today AS (
+			SELECT group_id, COALESCE(SUM(actual_cost), 0) AS today_cost
+			FROM usage_logs
+			WHERE created_at >= $1 AND group_id IS NOT NULL
+			GROUP BY group_id
+		)
+		SELECT
+			g.id AS group_id,
+			COALESCE(h.hist_cost, 0) + COALESCE(t.today_cost, 0) AS total_cost,
+			COALESCE(t.today_cost, 0) AS today_cost
+		FROM groups g
+		LEFT JOIN historical h ON h.group_id = g.id
+		LEFT JOIN today t ON t.group_id = g.id
+	`
+	rows, err := r.sql.QueryContext(ctx, query, todayStart)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	results := make([]usagestats.GroupUsageSummary, 0)
+	for rows.Next() {
+		var row usagestats.GroupUsageSummary
+		if err := rows.Scan(&row.GroupID, &row.TotalCost, &row.TodayCost); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (r *dashboardAggregationRepository) isUsageLogsPartitioned(ctx context.Context) (bool, error) {
