@@ -32,16 +32,38 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want:  true,
 		},
 		{
-			name:  "access component",
-			event: &logger.LogEvent{Level: "info", Component: "http.access"},
-			want:  true,
+			name: "access component error request",
+			event: &logger.LogEvent{
+				Level:     "info",
+				Component: "http.access",
+				Fields:    map[string]any{"status_code": 500},
+			},
+			want: true,
 		},
 		{
-			name: "access component from fields (real zap path)",
+			name: "access component slow request",
+			event: &logger.LogEvent{
+				Level:     "info",
+				Component: "http.access",
+				Fields:    map[string]any{"latency_ms": int64(3001)},
+			},
+			want: true,
+		},
+		{
+			name: "access component sampled fast request",
+			event: &logger.LogEvent{
+				Level:     "info",
+				Component: "http.access",
+				Fields:    map[string]any{"status_code": 200, "latency_ms": int64(10)},
+			},
+			want: true,
+		},
+		{
+			name: "access component from fields (real zap path) error request",
 			event: &logger.LogEvent{
 				Level:     "info",
 				Component: "",
-				Fields:    map[string]any{"component": "http.access"},
+				Fields:    map[string]any{"component": "http.access", "status_code": 500},
 			},
 			want: true,
 		},
@@ -67,9 +89,32 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		if tc.name == "access component sampled fast request" {
+			atomic.StoreUint64(&sink.accessSampleSeq, 19)
+		} else {
+			atomic.StoreUint64(&sink.accessSampleSeq, 0)
+		}
 		if got := sink.shouldIndex(tc.event); got != tc.want {
 			t.Fatalf("%s: shouldIndex()=%v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestOpsSystemLogSink_ShouldSampleNormalFastAccess(t *testing.T) {
+	sink := &OpsSystemLogSink{}
+	event := &logger.LogEvent{
+		Level:     "info",
+		Component: "http.access",
+		Fields:    map[string]any{"status_code": 200, "latency_ms": int64(10)},
+	}
+
+	for i := 1; i < 20; i++ {
+		if got := sink.shouldIndex(event); got {
+			t.Fatalf("normal fast access request #%d should not be indexed before sample interval", i)
+		}
+	}
+	if got := sink.shouldIndex(event); !got {
+		t.Fatalf("normal fast access request #20 should be indexed by sampling")
 	}
 }
 
