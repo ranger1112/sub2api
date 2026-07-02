@@ -24,13 +24,20 @@ import (
 //   - deleteErr: 模拟 Delete 返回的错误
 //   - deletedIDs: 记录被调用删除的 API Key ID，用于断言验证
 type apiKeyRepoStub struct {
-	apiKey         *APIKey // GetKeyAndOwnerID 的返回值
-	getByIDErr     error   // GetKeyAndOwnerID 的错误返回值
-	deleteErr      error   // Delete 的错误返回值
-	deletedIDs     []int64 // 记录已删除的 API Key ID 列表
-	updateLastUsed func(ctx context.Context, id int64, usedAt time.Time) error
-	touchedIDs     []int64
-	touchedUsedAts []time.Time
+	apiKey             *APIKey // GetKeyAndOwnerID 的返回值
+	getByIDErr         error   // GetKeyAndOwnerID 的错误返回值
+	deleteErr          error   // Delete 的错误返回值
+	updateErr          error   // Update 的错误返回值
+	deletedIDs         []int64 // 记录已删除的 API Key ID 列表
+	updatedKeys        []APIKey
+	allowListByUserID  bool
+	listByUserIDKeys   []APIKey
+	listByUserIDErr    error
+	listByUserIDCalls  []int64
+	listByUserIDParams []pagination.PaginationParams
+	updateLastUsed     func(ctx context.Context, id int64, usedAt time.Time) error
+	touchedIDs         []int64
+	touchedUsedAts     []time.Time
 }
 
 // 以下方法在本测试中不应被调用，使用 panic 确保测试失败时能快速定位问题
@@ -69,7 +76,10 @@ func (s *apiKeyRepoStub) GetByKeyForAuth(ctx context.Context, key string) (*APIK
 }
 
 func (s *apiKeyRepoStub) Update(ctx context.Context, key *APIKey) error {
-	panic("unexpected Update call")
+	if key != nil {
+		s.updatedKeys = append(s.updatedKeys, *key)
+	}
+	return s.updateErr
 }
 
 // Delete 记录被删除的 API Key ID 并返回预设的错误。
@@ -88,7 +98,21 @@ func (s *apiKeyRepoStub) DeleteWithAudit(ctx context.Context, id int64) error {
 // 以下是接口要求实现但本测试不关心的方法
 
 func (s *apiKeyRepoStub) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams, filters APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
-	panic("unexpected ListByUserID call")
+	if !s.allowListByUserID {
+		panic("unexpected ListByUserID call")
+	}
+	s.listByUserIDCalls = append(s.listByUserIDCalls, userID)
+	s.listByUserIDParams = append(s.listByUserIDParams, params)
+	if s.listByUserIDErr != nil {
+		return nil, nil, s.listByUserIDErr
+	}
+	keys := append([]APIKey(nil), s.listByUserIDKeys...)
+	return keys, &pagination.PaginationResult{
+		Total:    int64(len(keys)),
+		Page:     params.Page,
+		PageSize: params.PageSize,
+		Pages:    1,
+	}, nil
 }
 
 func (s *apiKeyRepoStub) VerifyOwnership(ctx context.Context, userID int64, apiKeyIDs []int64) ([]int64, error) {
