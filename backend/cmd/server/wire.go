@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -46,6 +47,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		// Privacy client factory for OpenAI training opt-out
 		providePrivacyClientFactory,
 
+		// Kiro provider: proxy-aware HTTP client factory + client config
+		provideKiroHTTPClientFactory,
+		provideKiroClientConfig,
+
 		// BuildInfo provider
 		provideServiceBuildInfo,
 
@@ -60,6 +65,14 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 
 func providePrivacyClientFactory() service.PrivacyClientFactory {
 	return repository.CreatePrivacyReqClient
+}
+
+func provideKiroHTTPClientFactory() service.KiroHTTPClientFactory {
+	return repository.CreateKiroHTTPClient
+}
+
+func provideKiroClientConfig() kiro.ClientConfig {
+	return kiro.DefaultClientConfig()
 }
 
 func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {

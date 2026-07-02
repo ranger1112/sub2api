@@ -38,6 +38,29 @@ const maxUpstreamErrorBody = 64 * 1024
 // client 由调用方提供(可携带代理 / TLS 指纹)。cred 必须是有效(未过期)凭据;token 刷新
 // 由调用方负责。若 w 实现了 Flush(),每批事件写入后会自动 flush,以支持实时流。
 func StreamMessages(ctx context.Context, client *http.Client, cred *Credentials, cfg ClientConfig, req *AnthropicRequest, w io.Writer) (*StreamResult, error) {
+	return runStream(ctx, client, cred, cfg, req, func(events []SSEEvent) error {
+		return writeEvents(w, events)
+	})
+}
+
+// CollectMessages 执行一次请求但不流式输出,而是把全部事件收集后拼装成一条完整的
+// Anthropic Messages 响应(用于 stream=false 的 /v1/messages)。返回拼装后的消息 JSON 对象、
+// 计费结果与错误。
+func CollectMessages(ctx context.Context, client *http.Client, cred *Credentials, cfg ClientConfig, req *AnthropicRequest) (map[string]any, *StreamResult, error) {
+	var collected []SSEEvent
+	result, err := runStream(ctx, client, cred, cfg, req, func(events []SSEEvent) error {
+		collected = append(collected, events...)
+		return nil
+	})
+	if err != nil {
+		return nil, result, err
+	}
+	return AssembleMessage(collected), result, nil
+}
+
+// runStream 是 StreamMessages / CollectMessages 共享的核心:每产生一批 SSE 事件即回调 sink。
+// sink 返回错误会立即中止(用于写入失败等场景)。
+func runStream(ctx context.Context, client *http.Client, cred *Credentials, cfg ClientConfig, req *AnthropicRequest, sink func([]SSEEvent) error) (*StreamResult, error) {
 	conv, err := Convert(req)
 	if err != nil {
 		return nil, err
@@ -65,7 +88,7 @@ func StreamMessages(ctx context.Context, client *http.Client, cred *Credentials,
 	}
 
 	sc := NewStreamContext(conv.ModelID, estimateInputTokens(req), conv.Thinking, conv.ToolNameMap)
-	if err := writeEvents(w, sc.GenerateInitialEvents()); err != nil {
+	if err := sink(sc.GenerateInitialEvents()); err != nil {
 		return nil, err
 	}
 
@@ -82,7 +105,7 @@ func StreamMessages(ctx context.Context, client *http.Client, cred *Credentials,
 			}
 			frames, decErr := dec.DecodeAvailable()
 			for _, f := range frames {
-				if err := writeEvents(w, sc.ProcessKiroEvent(EventFromFrame(f))); err != nil {
+				if err := sink(sc.ProcessKiroEvent(EventFromFrame(f))); err != nil {
 					return nil, err
 				}
 			}
@@ -116,7 +139,7 @@ func StreamMessages(ctx context.Context, client *http.Client, cred *Credentials,
 		OutputTokens: sc.OutputTokens,
 	}
 	// 终写失败不丢弃已算出的 result 或先前的 streamErr。
-	if err := writeEvents(w, finalEvents); err != nil && streamErr == nil {
+	if err := sink(finalEvents); err != nil && streamErr == nil {
 		streamErr = err
 	}
 	return result, streamErr

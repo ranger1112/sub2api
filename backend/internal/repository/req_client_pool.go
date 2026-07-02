@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -83,4 +84,17 @@ func CreatePrivacyReqClient(proxyURL string) (*req.Client, error) {
 		Timeout:     30 * time.Second,
 		Impersonate: true, // Enable Chrome TLS fingerprint impersonation
 	})
+}
+
+// CreateKiroHTTPClient 为 Kiro 上游流式请求 / token 刷新构建代理感知的 *http.Client。
+// 供 service.KiroHTTPClientFactory 使用(pkg/kiro 的 StreamMessages / RefreshToken 接收 *http.Client)。
+func CreateKiroHTTPClient(proxyURL string) (*http.Client, error) {
+	rc, err := getSharedReqClient(reqClientOptions{
+		ProxyURL: proxyURL,
+		Timeout:  15 * time.Minute, // Kiro 流式响应可能持续较久
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rc.GetClient(), nil
 }

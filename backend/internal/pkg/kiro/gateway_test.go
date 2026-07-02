@@ -121,6 +121,73 @@ func TestStreamMessages_EndToEnd(t *testing.T) {
 	}
 }
 
+func TestCollectMessages_EndToEnd(t *testing.T) {
+	withFixedUUID(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"Hello "}`))
+		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"world"}`))
+		w.Write(kiroEventFrame("toolUseEvent", `{"name":"read_file","toolUseId":"tu_1","input":"{\"path\":\"/x\"}","stop":true}`))
+		w.Write(kiroEventFrame("contextUsageEvent", `{"contextUsagePercentage":5.0}`))
+	}))
+	defer srv.Close()
+
+	cfg := DefaultClientConfig()
+	cfg.apiURLOverride = srv.URL
+	cred := &Credentials{AccessToken: "tok", RefreshToken: "rt"}
+	req := &AnthropicRequest{}
+	_ = json.Unmarshal([]byte(`{"model":"claude-sonnet-4-5","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`), req)
+
+	msg, res, err := CollectMessages(context.Background(), srv.Client(), cred, cfg, req)
+	if err != nil {
+		t.Fatalf("CollectMessages: %v", err)
+	}
+	if msg["role"] != "assistant" || msg["type"] != "message" {
+		t.Fatalf("message envelope wrong: %+v", msg)
+	}
+	content, _ := msg["content"].([]any)
+	if len(content) < 2 {
+		t.Fatalf("expected text + tool_use blocks, got %d: %+v", len(content), content)
+	}
+	// 第一块:合并后的文本
+	first, _ := content[0].(map[string]any)
+	if first["type"] != "text" || first["text"] != "Hello world" {
+		t.Fatalf("text block wrong: %+v", first)
+	}
+	// 存在 tool_use 块,且 input 已解析为对象
+	var sawTool bool
+	for _, b := range content {
+		bm, _ := b.(map[string]any)
+		if bm["type"] == "tool_use" {
+			sawTool = true
+			if bm["name"] != "read_file" {
+				t.Fatalf("tool name wrong: %+v", bm)
+			}
+			input, _ := bm["input"].(map[string]any)
+			if input["path"] != "/x" {
+				t.Fatalf("tool input not parsed: %+v", bm["input"])
+			}
+		}
+	}
+	if !sawTool {
+		t.Fatalf("missing tool_use block: %+v", content)
+	}
+	// usage:input 采用 contextUsageEvent 值,output > 0
+	usage, _ := msg["usage"].(map[string]any)
+	if eventIndex(usage["input_tokens"]) != 10000 {
+		t.Fatalf("usage input_tokens = %v, want 10000", usage["input_tokens"])
+	}
+	if eventIndex(usage["output_tokens"]) <= 0 {
+		t.Fatalf("usage output_tokens = %v, want > 0", usage["output_tokens"])
+	}
+	if res.Model != ModelSonnet45 {
+		t.Fatalf("result model = %q", res.Model)
+	}
+	// stop_reason 应为 tool_use(有工具调用)
+	if msg["stop_reason"] != "tool_use" {
+		t.Fatalf("stop_reason = %v, want tool_use", msg["stop_reason"])
+	}
+}
+
 func TestStreamMessages_UpstreamError(t *testing.T) {
 	withFixedUUID(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
