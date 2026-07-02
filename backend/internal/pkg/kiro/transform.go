@@ -297,11 +297,14 @@ func mapToolName(name string, toolNameMap map[string]string) string {
 	return short
 }
 
-// shortenToolName 生成确定性短名:前缀(≤54 字符)+ "_" + 8 位 SHA256 hex。
+// shortenToolName 生成确定性短名:前缀 + "_" + 8 位 SHA256 hex。
+// 前缀按【字节】截断到 54(= 63-1-8)且落在 UTF-8 边界上,确保结果 <= 63 字节
+// (Kiro 的工具名上限是字节数)。这里刻意比 kiro.rs 更严格:后者按字符截断,
+// 对多字节名会溢出 63 字节导致上游 400。
 func shortenToolName(name string) string {
 	sum := sha256.Sum256([]byte(name))
 	hashHex := hex.EncodeToString(sum[:])[:8]
-	prefix := truncateRunes(name, toolNameMaxLen-1-8) // 54
+	prefix := name[:findCharBoundary(name, toolNameMaxLen-1-8)]
 	return prefix + "_" + hashHex
 }
 
@@ -339,7 +342,8 @@ func generateThinkingPrefix(req *AnthropicRequest) string {
 }
 
 func effectiveBudget(t *Thinking) int {
-	if t.BudgetTokens == nil {
+	// 缺省或非正值(0/负数)一律回落到默认预算,避免产生 <max_thinking_length>-5</...> 之类无意义标签。
+	if t.BudgetTokens == nil || *t.BudgetTokens <= 0 {
 		return defaultBudgetTokens
 	}
 	if *t.BudgetTokens > maxBudgetTokens {

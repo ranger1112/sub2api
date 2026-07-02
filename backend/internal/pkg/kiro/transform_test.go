@@ -266,6 +266,24 @@ func TestConvert_LongToolNameShortened(t *testing.T) {
 	}
 }
 
+func TestConvert_LongCJKToolNameStaysWithinByteLimit(t *testing.T) {
+	withFixedUUID(t)
+	longCJK := strings.Repeat("工", 30) // 30 runes / 90 bytes,远超 63 字节上限
+	res := mustConvert(t, `{
+		"model": "claude-sonnet-4-5",
+		"max_tokens": 100,
+		"tools": [{"name":"`+longCJK+`","description":"d","input_schema":{"type":"object"}}],
+		"messages": [{"role":"user","content":"hi"}]
+	}`)
+	short := res.ConversationState.CurrentMessage.UserInputMessage.UserInputMessageContext.Tools[0].ToolSpecification.Name
+	if len(short) > toolNameMaxLen {
+		t.Fatalf("shortened CJK name = %d bytes, want <= %d (%q)", len(short), toolNameMaxLen, short)
+	}
+	if res.ToolNameMap[short] != longCJK {
+		t.Fatalf("ToolNameMap[%q] = %q, want original CJK name", short, res.ToolNameMap[short])
+	}
+}
+
 func TestConvert_WriteToolDescriptionSuffix(t *testing.T) {
 	withFixedUUID(t)
 	res := mustConvert(t, `{

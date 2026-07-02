@@ -2,6 +2,7 @@ package kiro
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -229,10 +230,11 @@ func (m *sseStateManager) handleMessageStart(data map[string]any) (SSEEvent, boo
 
 func (m *sseStateManager) handleContentBlockStart(index int, blockType string, data map[string]any) []SSEEvent {
 	var events []SSEEvent
-	// tool_use 开始前,先关闭仍打开的文本块。
+	// tool_use 开始前,先关闭仍打开的文本块(按索引升序,保证 SSE 顺序确定且符合 Anthropic 规范)。
 	if blockType == "tool_use" {
 		m.hasToolUse = true
-		for bi, b := range m.activeBlocks {
+		for _, bi := range m.sortedBlockIndices() {
+			b := m.activeBlocks[bi]
 			if b.blockType == "text" && b.started && !b.stopped {
 				events = append(events, contentBlockStop(bi))
 				b.stopped = true
@@ -268,9 +270,19 @@ func (m *sseStateManager) handleContentBlockStop(index int) (SSEEvent, bool) {
 	return contentBlockStop(index), true
 }
 
+func (m *sseStateManager) sortedBlockIndices() []int {
+	indices := make([]int, 0, len(m.activeBlocks))
+	for index := range m.activeBlocks {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	return indices
+}
+
 func (m *sseStateManager) generateFinalEvents(inputTokens, outputTokens int) []SSEEvent {
 	var events []SSEEvent
-	for index, b := range m.activeBlocks {
+	for _, index := range m.sortedBlockIndices() {
+		b := m.activeBlocks[index]
 		if b.started && !b.stopped {
 			events = append(events, contentBlockStop(index))
 			b.stopped = true
