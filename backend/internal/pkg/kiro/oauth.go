@@ -132,13 +132,19 @@ func refreshIdcToken(ctx context.Context, client *http.Client, cred *Credentials
 	return doRefresh(client, req, cred, "IdC")
 }
 
+// maxRefreshBodySize 限制刷新响应体读取上限,防止恶意/异常上游无限流式响应导致 OOM。
+const maxRefreshBodySize = 1 << 20 // 1 MB
+
 func doRefresh(client *http.Client, req *http.Request, cred *Credentials, kind string) (*Credentials, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxRefreshBodySize))
+	if err != nil {
+		return nil, fmt.Errorf("kiro: %s refresh: read response: %w", kind, err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, classifyRefreshError(kind, resp.StatusCode, respBody)
@@ -152,9 +158,11 @@ func doRefresh(client *http.Client, req *http.Request, cred *Credentials, kind s
 
 func classifyRefreshError(kind string, status int, body []byte) error {
 	bodyStr := string(body)
-	if status == http.StatusBadRequest &&
-		strings.Contains(bodyStr, `"invalid_grant"`) &&
-		strings.Contains(bodyStr, "Invalid refresh token provided") {
+	// 400 + invalid_grant 视为 refreshToken 永久失效:
+	//   - social(kiro.dev)带具体措辞 "Invalid refresh token provided";
+	//   - idc(AWS OIDC)按 OAuth2(RFC 6749 §5.2)语义,invalid_grant 即为撤销/过期,永久失效。
+	if status == http.StatusBadRequest && strings.Contains(bodyStr, "invalid_grant") &&
+		(kind == "IdC" || strings.Contains(bodyStr, "Invalid refresh token provided")) {
 		return &RefreshTokenInvalidError{Message: kind + " refreshToken invalid (invalid_grant): " + bodyStr}
 	}
 	var reason string
@@ -184,7 +192,14 @@ func applyRefresh(cred *Credentials, data refreshResponse) *Credentials {
 		nc.ProfileArn = data.ProfileArn
 	}
 	if data.ExpiresIn > 0 {
-		nc.ExpiresAt = timeNow().Add(time.Duration(data.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
+		secs := data.ExpiresIn
+		if secs > maxExpiresInSeconds { // 上限防护:避免 time.Duration 溢出为负导致过期时间落在过去
+			secs = maxExpiresInSeconds
+		}
+		nc.ExpiresAt = timeNow().Add(time.Duration(secs) * time.Second).UTC().Format(time.RFC3339)
 	}
 	return &nc
 }
+
+// maxExpiresInSeconds 约为 10 年,远小于 time.Duration(int64 纳秒)的溢出阈值。
+const maxExpiresInSeconds = 10 * 365 * 24 * 60 * 60

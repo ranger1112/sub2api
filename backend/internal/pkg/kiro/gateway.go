@@ -100,15 +100,24 @@ func StreamMessages(ctx context.Context, client *http.Client, cred *Credentials,
 		}
 	}
 
-	// 收尾事件始终发送(即便中途出错,也让客户端得到一个可闭合的消息)。
-	if err := writeEvents(w, sc.GenerateFinalEvents()); err != nil {
-		return nil, err
+	// 干净 EOF 后检测截断:若解码器仍残留不足以构成完整帧的字节,说明流被截断,
+	// 应作为错误上报,而非静默地当作成功。
+	if streamErr == nil {
+		if err := dec.Finish(); err != nil {
+			streamErr = err
+		}
 	}
 
+	// 收尾事件始终发送(即便中途出错,也让客户端得到一个可闭合的消息)。
+	finalEvents := sc.GenerateFinalEvents()
 	result := &StreamResult{
 		Model:        conv.ModelID,
 		InputTokens:  sc.FinalInputTokens(),
 		OutputTokens: sc.OutputTokens,
+	}
+	// 终写失败不丢弃已算出的 result 或先前的 streamErr。
+	if err := writeEvents(w, finalEvents); err != nil && streamErr == nil {
+		streamErr = err
 	}
 	return result, streamErr
 }
@@ -123,10 +132,18 @@ func writeEvents(w io.Writer, events []SSEEvent) error {
 			return err
 		}
 	}
-	if f, ok := w.(interface{ Flush() }); ok {
-		f.Flush()
-	}
+	flushWriter(w)
 	return nil
+}
+
+// flushWriter 支持 http.Flusher(Flush())与 *bufio.Writer(Flush() error)两种写入器。
+func flushWriter(w io.Writer) {
+	switch f := w.(type) {
+	case interface{ Flush() }:
+		f.Flush()
+	case interface{ Flush() error }:
+		_ = f.Flush()
+	}
 }
 
 // estimateInputTokens 从请求粗略估算 input tokens(contextUsageEvent 到达后会被更准确的值覆盖)。

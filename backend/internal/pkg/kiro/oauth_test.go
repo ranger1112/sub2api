@@ -82,6 +82,25 @@ func TestRefreshToken_InvalidGrantIsPermanent(t *testing.T) {
 	}
 }
 
+func TestRefreshToken_IdcInvalidGrantPermanent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		// AWS OIDC 风格:invalid_grant,但不含 social 的具体措辞
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"Token has been revoked"}`))
+	}))
+	defer srv.Close()
+
+	cfg := DefaultClientConfig()
+	cfg.idcRefreshURLOverride = srv.URL
+	cred := &Credentials{RefreshToken: validRefreshToken, ClientID: "cid", ClientSecret: "csec", AuthMethod: "idc"}
+
+	_, err := RefreshToken(context.Background(), srv.Client(), cred, cfg)
+	var invalid *RefreshTokenInvalidError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("IdC invalid_grant should be permanent, got %v", err)
+	}
+}
+
 func TestRefreshToken_Social401IsGeneric(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

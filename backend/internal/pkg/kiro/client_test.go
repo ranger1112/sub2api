@@ -101,6 +101,12 @@ func TestInjectProfileArn(t *testing.T) {
 	if got := InjectProfileArn([]byte("not-json"), "arn"); string(got) != "not-json" {
 		t.Fatalf("invalid json should return original: %s", got)
 	}
+	// 合法但非对象(数字/字符串/null/数组)→ 原样,不得被 sjson 篡改
+	for _, nonObj := range []string{"42", `"hello"`, "null", "[1,2,3]"} {
+		if got := InjectProfileArn([]byte(nonObj), "arn"); string(got) != nonObj {
+			t.Fatalf("non-object %q should return original, got %s", nonObj, got)
+		}
+	}
 }
 
 func TestBuildAPIRequest_OAuthCredential(t *testing.T) {

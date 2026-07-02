@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"hash/crc32"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro/eventstream"
 )
 
 // encodeKiroFrame 构造一个可被 eventstream.Decoder 解析的 AWS Event Stream 帧,
@@ -140,6 +143,37 @@ func TestStreamMessages_UpstreamError(t *testing.T) {
 	}
 	if ue.StatusCode != http.StatusForbidden || !strings.Contains(ue.Body, "MONTHLY_REQUEST_COUNT") {
 		t.Fatalf("UpstreamError = %+v", ue)
+	}
+}
+
+func TestStreamMessages_TruncatedStreamErrors(t *testing.T) {
+	withFixedUUID(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 一个完整帧 + 一个残缺帧(仅前 8 字节,不足 prelude),然后关闭 → 截断
+		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"partial"}`))
+		full := kiroEventFrame("assistantResponseEvent", `{"content":"never arrives"}`)
+		w.Write(full[:8])
+	}))
+	defer srv.Close()
+
+	cfg := DefaultClientConfig()
+	cfg.apiURLOverride = srv.URL
+	cred := &Credentials{AccessToken: "t", RefreshToken: "rt"}
+	req := &AnthropicRequest{}
+	_ = json.Unmarshal([]byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"messages":[{"role":"user","content":"x"}]}`), req)
+
+	var sink strings.Builder
+	res, err := StreamMessages(context.Background(), srv.Client(), cred, cfg, req, &sink)
+	var incomplete *eventstream.IncompleteFrameError
+	if !errors.As(err, &incomplete) {
+		t.Fatalf("expected IncompleteFrameError (truncation), got %v", err)
+	}
+	// 计费 result 不应因截断而丢弃;首个完整帧的文本仍应已写出
+	if res == nil {
+		t.Fatal("result should be returned even on truncation")
+	}
+	if !strings.Contains(sink.String(), `"text":"partial"`) {
+		t.Fatalf("first complete frame should have streamed: %s", sink.String())
 	}
 }
 

@@ -159,11 +159,11 @@ func BuildAPIRequest(ctx context.Context, cred *Credentials, cfg ClientConfig, b
 	return req, nil
 }
 
-// InjectProfileArn 在请求体 JSON 根对象注入 profileArn。arn 为空或 body 非合法 JSON 时原样返回。
-// 显式校验合法性:sjson 对非法 JSON 不报错而会直接生成 {"profileArn":...} 丢弃原文,
-// 这里守住与 kiro.rs 一致的"非法 JSON 原样返回"契约。
+// InjectProfileArn 在请求体 JSON 根对象注入 profileArn。arn 为空或 body 不是 JSON 对象时原样返回。
+// 显式要求根为对象:sjson 对非法或非对象 JSON(如 42 / "x")不报错而会直接生成
+// {"profileArn":...} 丢弃原文,这里守住"仅对 JSON 对象注入,否则原样返回"的契约。
 func InjectProfileArn(body []byte, profileArn string) []byte {
-	if profileArn == "" || !gjson.ValidBytes(body) {
+	if profileArn == "" || !gjson.ParseBytes(body).IsObject() {
 		return body
 	}
 	out, err := sjson.SetBytes(body, "profileArn", profileArn)
@@ -226,7 +226,11 @@ var (
 )
 
 // fallbackMachineID 为缺少派生材料的凭据生成随机 machineId,按凭据 ID 进程内缓存以保持稳定。
+// ID 为 0(未持久化)时不缓存,直接返回一次性随机值,避免所有 ID==0 凭据共享同一 machineId。
 func fallbackMachineID(cred *Credentials) string {
+	if cred.ID == 0 {
+		return sha256Hex("KiroFallback/" + newUUID())
+	}
 	fallbackMachineIDsMu.Lock()
 	defer fallbackMachineIDsMu.Unlock()
 	if v, ok := fallbackMachineIDs[cred.ID]; ok {
