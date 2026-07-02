@@ -622,6 +622,14 @@ func (c *StreamContext) processToolUse(tu ToolUseEvent) []SSEEvent {
 	return events
 }
 
+// FinalInputTokens 返回最终 input_tokens:优先取 contextUsageEvent 计算值,否则用初始估算值。
+func (c *StreamContext) FinalInputTokens() int {
+	if c.hasContextTokens {
+		return c.contextInputTokens
+	}
+	return c.InputTokens
+}
+
 // GenerateFinalEvents 冲刷残留缓冲并产出 message_delta / message_stop。
 func (c *StreamContext) GenerateFinalEvents() []SSEEvent {
 	var events []SSEEvent

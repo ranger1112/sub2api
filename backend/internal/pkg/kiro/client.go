@@ -31,7 +31,8 @@ type ClientConfig struct {
 	NodeVersion   string
 	MachineID     string // 全局兜底 machineId
 
-	// 仅用于测试:覆盖刷新端点地址(为空则使用真实 AWS / kiro.dev 地址)。
+	// 仅用于测试:覆盖端点地址(为空则使用真实 AWS / kiro.dev 地址)。
+	apiURLOverride           string
 	socialRefreshURLOverride string
 	idcRefreshURLOverride    string
 }
@@ -126,6 +127,9 @@ func BuildAPIRequest(ctx context.Context, cred *Credentials, cfg ClientConfig, b
 	apiRegion := cred.EffectiveAPIRegion(cfg)
 	host := "q." + apiRegion + ".amazonaws.com"
 	url := "https://" + host + "/generateAssistantResponse"
+	if cfg.apiURLOverride != "" {
+		url = cfg.apiURLOverride
+	}
 	machineID := MachineID(cred, cfg)
 	body = InjectProfileArn(body, cred.ProfileArn)
 
