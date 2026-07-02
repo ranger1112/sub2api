@@ -79,7 +79,8 @@ func (d *Decoder) Decode() (*Frame, error) {
 		d.errorCount = 0
 		return frame, nil
 	case err == nil && frame == nil:
-		// 数据不足,等待更多字节。
+		// 数据不足,等待更多字节。errorCount 不在此重置——这不是一次成功解析,
+		// 仅当真正解出一帧时才清零连续错误计数。
 		d.state = stateReady
 		return nil, nil
 	default:
@@ -115,6 +116,25 @@ func (d *Decoder) DecodeAvailable() ([]*Frame, error) {
 	}
 }
 
+// Finish 应在上游流结束(EOF)后调用,用于检测截断。
+// 若内部缓冲仍有未消费的残留字节(不足以构成完整帧),返回 *IncompleteFrameError;
+// 缓冲已清空则返回 nil。
+func (d *Decoder) Finish() error {
+	if len(d.buf) > 0 {
+		return &IncompleteFrameError{Residual: len(d.buf)}
+	}
+	return nil
+}
+
+// Reset 清空缓冲与内部状态,使解码器可被复用(包括从 Stopped 状态恢复)。
+func (d *Decoder) Reset() {
+	d.buf = d.buf[:0]
+	d.state = stateReady
+	d.framesDecoded = 0
+	d.errorCount = 0
+	d.bytesSkipped = 0
+}
+
 // FramesDecoded 返回已成功解码的帧总数(用于观测/调试)。
 func (d *Decoder) FramesDecoded() int { return d.framesDecoded }
 
@@ -136,16 +156,18 @@ func (d *Decoder) tryRecover(err error) {
 	}
 	switch e := err.(type) {
 	case *CRCMismatchError:
+		// message CRC 失败:帧边界(Total Length)已由 prelude CRC 认证,可跳过整帧。
 		if e.Part == "message" && d.skipWholeFrame() {
 			return
 		}
 		d.skipByte()
-	case *MessageSizeError:
-		d.skipByte()
-	case *HeaderParseError:
+	case *HeaderParseError, *InvalidHeaderTypeError:
+		// 两类错误都发生在 CRC 校验通过之后,帧边界可信,优先跳过整帧。
 		if d.skipWholeFrame() {
 			return
 		}
+		d.skipByte()
+	case *MessageSizeError:
 		d.skipByte()
 	default:
 		d.skipByte()

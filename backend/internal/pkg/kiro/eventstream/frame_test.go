@@ -126,3 +126,64 @@ func TestParseFrame_MessageCRCMismatch(t *testing.T) {
 		t.Fatalf("err = %v, want message CRCMismatchError", err)
 	}
 }
+
+func TestParseFrame_ZeroHeadersAndPayload(t *testing.T) {
+	// 无 header、无 payload —— 最小合法帧(恰为 MinMessageSize)。
+	buf := encodeFrame(nil, nil)
+	if len(buf) != MinMessageSize {
+		t.Fatalf("empty frame size = %d, want %d", len(buf), MinMessageSize)
+	}
+	frame, consumed, err := parseFrame(buf)
+	if err != nil || frame == nil || consumed != len(buf) {
+		t.Fatalf("got (frame=%v, consumed=%d, err=%v)", frame, consumed, err)
+	}
+	if len(frame.Headers) != 0 || len(frame.Payload) != 0 {
+		t.Fatalf("headers=%d payload=%d, want 0/0", len(frame.Headers), len(frame.Payload))
+	}
+	if frame.MessageType() != "" {
+		t.Fatalf("MessageType = %q, want empty", frame.MessageType())
+	}
+}
+
+func TestParseFrame_ZeroPayloadWithHeaders(t *testing.T) {
+	buf := encodeFrame([]testHeader{{":message-type", "event"}}, nil)
+	frame, _, err := parseFrame(buf)
+	if err != nil || frame == nil {
+		t.Fatalf("got (frame=%v, err=%v)", frame, err)
+	}
+	if len(frame.Payload) != 0 {
+		t.Fatalf("payload len = %d, want 0", len(frame.Payload))
+	}
+	if frame.MessageType() != "event" {
+		t.Fatalf("MessageType = %q, want event", frame.MessageType())
+	}
+}
+
+func TestParseFrame_MessageTooLarge(t *testing.T) {
+	buf := make([]byte, PreludeSize)
+	binary.BigEndian.PutUint32(buf[0:4], uint32(MaxMessageSize)+1)
+	binary.BigEndian.PutUint32(buf[4:8], 0)
+	binary.BigEndian.PutUint32(buf[8:12], crc32.ChecksumIEEE(buf[0:8]))
+
+	_, _, err := parseFrame(buf)
+	var sizeErr *MessageSizeError
+	if !errors.As(err, &sizeErr) || !sizeErr.TooBig {
+		t.Fatalf("err = %v, want MessageSizeError(too big)", err)
+	}
+}
+
+func TestParseFrame_HeaderLengthExceedsBoundary(t *testing.T) {
+	// Total Length 与 Header Length 均通过 CRC,但 Header Length 越出帧边界:应报 HeaderParseError。
+	const total = 20
+	buf := make([]byte, total)
+	binary.BigEndian.PutUint32(buf[0:4], uint32(total))
+	binary.BigEndian.PutUint32(buf[4:8], 100) // 远超帧本身
+	binary.BigEndian.PutUint32(buf[8:12], crc32.ChecksumIEEE(buf[0:8]))
+	binary.BigEndian.PutUint32(buf[total-4:], crc32.ChecksumIEEE(buf[0:total-4]))
+
+	_, _, err := parseFrame(buf)
+	var hpErr *HeaderParseError
+	if !errors.As(err, &hpErr) {
+		t.Fatalf("err = %v, want HeaderParseError (boundary)", err)
+	}
+}

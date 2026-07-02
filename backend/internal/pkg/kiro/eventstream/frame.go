@@ -46,6 +46,13 @@ func parseFrame(buffer []byte) (frame *Frame, consumed int, err error) {
 	headerLength := binary.BigEndian.Uint32(buffer[4:8])
 	preludeCRC := binary.BigEndian.Uint32(buffer[8:12])
 
+	// 先用 Prelude CRC 认证前 8 字节(Total/Header Length),再据其做长度判断与等待。
+	// 这样可避免被损坏的 Total Length 误导——例如等待一段永不到达的数据,或把后续
+	// 合法帧误纳入一个虚高的消息窗口而放大内存/延迟。
+	if actual := crc32IEEE(buffer[:8]); actual != preludeCRC {
+		return nil, 0, &CRCMismatchError{Part: "prelude", Expected: preludeCRC, Actual: actual}
+	}
+
 	if totalLength < MinMessageSize {
 		return nil, 0, &MessageSizeError{Length: totalLength, Bound: MinMessageSize, TooBig: false}
 	}
@@ -56,14 +63,9 @@ func parseFrame(buffer []byte) (frame *Frame, consumed int, err error) {
 	total := int(totalLength)
 	hdrLen := int(headerLength)
 
-	// 尚未收到完整消息,等待更多数据。
+	// 消息尚未完整到达,等待更多数据(Total Length 已通过 Prelude CRC 认证)。
 	if len(buffer) < total {
 		return nil, 0, nil
-	}
-
-	// 校验 Prelude CRC(前 8 字节)。
-	if actual := crc32IEEE(buffer[:8]); actual != preludeCRC {
-		return nil, 0, &CRCMismatchError{Part: "prelude", Expected: preludeCRC, Actual: actual}
 	}
 
 	// 校验 Message CRC(整条消息去除末尾 4 字节)。
@@ -74,7 +76,8 @@ func parseFrame(buffer []byte) (frame *Frame, consumed int, err error) {
 
 	headersStart := PreludeSize
 	headersEnd := headersStart + hdrLen
-	if headersEnd > total-4 {
+	// headersEnd < headersStart 防护 32-bit 平台上 int(headerLength) 溢出为负导致越界。
+	if headersEnd < headersStart || headersEnd > total-4 {
 		return nil, 0, &HeaderParseError{Msg: "header length exceeds message boundary"}
 	}
 

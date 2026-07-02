@@ -69,3 +69,13 @@ type BufferOverflowError struct {
 func (e *BufferOverflowError) Error() string {
 	return fmt.Sprintf("eventstream: buffer overflow: %d bytes (max %d)", e.Size, e.Max)
 }
+
+// IncompleteFrameError 表示流结束(EOF)时缓冲仍残留不足以构成完整帧的字节,
+// 通常意味着上游响应被截断。
+type IncompleteFrameError struct {
+	Residual int
+}
+
+func (e *IncompleteFrameError) Error() string {
+	return fmt.Sprintf("eventstream: incomplete trailing frame: %d residual bytes", e.Residual)
+}

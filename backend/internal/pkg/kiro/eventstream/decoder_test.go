@@ -1,8 +1,20 @@
 package eventstream
 
 import (
+	"errors"
 	"testing"
 )
+
+// corruptStream 拼接 n 个 prelude 完好但 message CRC 损坏的帧,用于驱动连续错误。
+func corruptStream(n int) []byte {
+	var stream []byte
+	for i := 0; i < n; i++ {
+		f := encodeFrame([]testHeader{{":message-type", "event"}}, []byte("bad"))
+		f[len(f)-1] ^= 0xFF
+		stream = append(stream, f...)
+	}
+	return stream
+}
 
 func TestDecoder_SingleFrameChunked(t *testing.T) {
 	buf := encodeFrame([]testHeader{
@@ -104,5 +116,81 @@ func TestDecoder_BufferOverflow(t *testing.T) {
 		t.Fatal("expected BufferOverflowError")
 	} else if _, ok := err.(*BufferOverflowError); !ok {
 		t.Fatalf("err = %v, want *BufferOverflowError", err)
+	}
+}
+
+func TestDecoder_MaxErrorsStops(t *testing.T) {
+	d := NewDecoder()
+	if err := d.Feed(corruptStream(DefaultMaxErrors)); err != nil {
+		t.Fatalf("Feed error: %v", err)
+	}
+	frames, err := d.DecodeAvailable()
+	var tme *TooManyErrorsError
+	if !errors.As(err, &tme) {
+		t.Fatalf("err = %v, want TooManyErrorsError", err)
+	}
+	if len(frames) != 0 {
+		t.Fatalf("got %d frames, want 0", len(frames))
+	}
+}
+
+func TestDecoder_StoppedThenFeedStaysStopped(t *testing.T) {
+	d := NewDecoder()
+	_ = d.Feed(corruptStream(DefaultMaxErrors))
+	_, _ = d.DecodeAvailable() // 现在应处于 Stopped
+
+	good := encodeFrame([]testHeader{{":message-type", "event"}}, []byte("ok"))
+	if err := d.Feed(good); err != nil {
+		t.Fatalf("Feed after stop: %v", err)
+	}
+	frame, err := d.Decode()
+	var tme *TooManyErrorsError
+	if frame != nil || !errors.As(err, &tme) {
+		t.Fatalf("got (%v, %v), want (nil, TooManyErrorsError)", frame, err)
+	}
+}
+
+func TestDecoder_ResetRecoversFromStopped(t *testing.T) {
+	d := NewDecoder()
+	_ = d.Feed(corruptStream(DefaultMaxErrors))
+	_, _ = d.DecodeAvailable() // Stopped
+
+	d.Reset()
+	good := encodeFrame([]testHeader{{":message-type", "event"}}, []byte("ok"))
+	if err := d.Feed(good); err != nil {
+		t.Fatalf("Feed after reset: %v", err)
+	}
+	frame, err := d.Decode()
+	if err != nil || frame == nil || string(frame.Payload) != "ok" {
+		t.Fatalf("after reset got (%v, %v), want frame payload=ok", frame, err)
+	}
+	if d.FramesDecoded() != 1 {
+		t.Fatalf("FramesDecoded = %d, want 1 (reset should have zeroed counters)", d.FramesDecoded())
+	}
+}
+
+func TestDecoder_FinishDetectsTruncation(t *testing.T) {
+	full := encodeFrame([]testHeader{{":message-type", "event"}}, []byte("hi"))
+
+	d := NewDecoder()
+	_ = d.Feed(full[:len(full)-3]) // 只喂入部分帧
+	if _, err := d.DecodeAvailable(); err != nil {
+		t.Fatalf("DecodeAvailable(partial) = %v, want nil (need more data)", err)
+	}
+	err := d.Finish()
+	var inc *IncompleteFrameError
+	if !errors.As(err, &inc) {
+		t.Fatalf("Finish(truncated) = %v, want IncompleteFrameError", err)
+	}
+
+	// 完整流结束后不应有残留。
+	d.Reset()
+	_ = d.Feed(full)
+	frames, _ := d.DecodeAvailable()
+	if len(frames) != 1 {
+		t.Fatalf("got %d frames, want 1", len(frames))
+	}
+	if err := d.Finish(); err != nil {
+		t.Fatalf("Finish(complete) = %v, want nil", err)
 	}
 }
