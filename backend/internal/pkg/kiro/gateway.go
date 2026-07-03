@@ -14,6 +14,8 @@ import (
 type UpstreamError struct {
 	StatusCode int
 	Body       string
+	// Headers 是上游响应头的克隆(可能为 nil),用于向上层透传 Retry-After 等诊断信息。
+	Headers http.Header
 }
 
 func (e *UpstreamError) Error() string {
@@ -84,7 +86,7 @@ func runStream(ctx context.Context, client *http.Client, cred *Credentials, cfg 
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBody))
-		return nil, &UpstreamError{StatusCode: resp.StatusCode, Body: string(errBody)}
+		return nil, &UpstreamError{StatusCode: resp.StatusCode, Body: string(errBody), Headers: resp.Header.Clone()}
 	}
 
 	sc := NewStreamContext(conv.ModelID, estimateInputTokens(req), conv.Thinking, conv.ToolNameMap)

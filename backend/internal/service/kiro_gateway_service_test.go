@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"hash/crc32"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +17,35 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 )
+
+// kiroRespRoundTripper 返回预设状态码 / 响应体 / 响应头,用于验证上游头透传(如 Retry-After)。
+type kiroRespRoundTripper struct {
+	status int
+	body   string
+	header http.Header
+}
+
+func (r *kiroRespRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	h := r.header
+	if h == nil {
+		h = make(http.Header)
+	}
+	return &http.Response{
+		StatusCode: r.status,
+		Body:       io.NopCloser(strings.NewReader(r.body)),
+		Header:     h,
+	}, nil
+}
+
+// kiroErrRoundTripper 让 client.Do 直接返回一个连接级错误。
+type kiroErrRoundTripper struct{ err error }
+
+func (r *kiroErrRoundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, r.err }
+
+func newKiroServiceWithRT(rt http.RoundTripper) *KiroGatewayService {
+	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
+	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig())
+}
 
 // kiroTestFrame 构造一个可被 pkg/kiro 解码的 AWS Event Stream 帧(用于伪造上游响应)。
 func kiroTestFrame(eventType, payload string) []byte {
@@ -104,36 +136,183 @@ func TestKiroGatewayService_ForwardNonStream(t *testing.T) {
 	}
 }
 
-func TestKiroGatewayService_ForwardUpstreamErrorPropagatesStatus(t *testing.T) {
+// TestKiroGatewayService_ForwardRetryableUpstreamErrorFailsOver 验证:可重试上游状态(429)
+// 在首字节前返回 *UpstreamFailoverError(供 handler 跨账号 failover),不向客户端写任何字节,
+// 并记录一次 ops 上游错误遥测。
+func TestKiroGatewayService_ForwardRetryableUpstreamErrorFailsOver(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	rt := &kiroFakeRoundTripper{status: http.StatusTooManyRequests, body: `{"message":"rate limited","reason":"MONTHLY_REQUEST_COUNT"}`}
-	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
-	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig())
+	svc := newKiroServiceWithRT(&kiroRespRoundTripper{
+		status: http.StatusTooManyRequests,
+		body:   `{"message":"rate limited","reason":"MONTHLY_REQUEST_COUNT"}`,
+	})
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
 
-	if _, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false); err == nil {
-		t.Fatal("expected upstream error")
+	result, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false)
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("err = %v, want *UpstreamFailoverError", err)
 	}
-	// 真实上游状态码应被透传,且不再是 SSE content-type
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429", rec.Code)
+	if result != nil {
+		t.Fatalf("failover path should not return a ForwardResult, got %+v", result)
+	}
+	if failoverErr.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("failover status = %d, want 429", failoverErr.StatusCode)
+	}
+	if !strings.Contains(string(failoverErr.ResponseBody), "rate limited") {
+		t.Fatalf("failover ResponseBody = %q, want upstream body", failoverErr.ResponseBody)
+	}
+	// 首字节前:不得向客户端写出任何字节,且不留下 SSE content-type。
+	if rec.Body.Len() != 0 {
+		t.Fatalf("failover must not write body, got %q", rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct == "text/event-stream" {
+		t.Fatalf("SSE headers should be cleared on failover, got content-type %q", ct)
+	}
+	// ops 遥测:记录了一条 failover 事件,携带真实上游状态码。
+	assertKiroOpsEvent(t, c, http.StatusTooManyRequests, "failover")
+	if v, ok := c.Get(OpsUpstreamStatusCodeKey); !ok || v.(int) != http.StatusTooManyRequests {
+		t.Fatalf("ops upstream status = %v (ok=%v), want 429", v, ok)
+	}
+}
+
+// TestKiroGatewayService_ForwardServerErrorFailsOver 验证 5xx 上游同样触发 failover。
+func TestKiroGatewayService_ForwardServerErrorFailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newKiroServiceWithRT(&kiroRespRoundTripper{status: http.StatusInternalServerError, body: `{"message":"boom"}`})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"messages":[{"role":"user","content":"x"}]}`)
+
+	_, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false)
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("err = %v, want *UpstreamFailoverError for 500", err)
+	}
+	if failoverErr.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("failover status = %d, want 500", failoverErr.StatusCode)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("non-stream failover must not write body, got %q", rec.Body.String())
+	}
+}
+
+// TestKiroGatewayService_ForwardTerminalClientErrorNoFailover 验证:非重试客户端错误(403)
+// 保持终止行为——写出映射后的 JSON 错误,返回原始错误(非 failover),并记录 http_error 遥测。
+func TestKiroGatewayService_ForwardTerminalClientErrorNoFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newKiroServiceWithRT(&kiroRespRoundTripper{
+		status: http.StatusForbidden,
+		body:   `{"message":"forbidden","reason":"MONTHLY_REQUEST_COUNT"}`,
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
+
+	_, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false)
+	if err == nil {
+		t.Fatal("expected terminal upstream error")
+	}
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) {
+		t.Fatalf("403 must be terminal, got failover error: %v", err)
+	}
+	// 真实上游状态码应被透传,且改写为 JSON(非 SSE)。
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("content-type = %q, want application/json (not text/event-stream)", ct)
+		t.Fatalf("content-type = %q, want application/json", ct)
 	}
 	var out map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("error body not JSON: %s", rec.Body.String())
 	}
 	e, _ := out["error"].(map[string]any)
-	if e["type"] != "rate_limit_error" {
-		t.Fatalf("error type = %v, want rate_limit_error", e["type"])
+	if e["type"] != "permission_error" {
+		t.Fatalf("error type = %v, want permission_error", e["type"])
 	}
-	if msg, _ := e["message"].(string); !strings.Contains(msg, "rate limited") {
-		t.Fatalf("error message = %q, want to contain upstream message", msg)
+	assertKiroOpsEvent(t, c, http.StatusForbidden, "http_error")
+}
+
+// TestKiroGatewayService_ForwardConnectionErrorFailsOver 验证:连接级(网络)错误在首字节前
+// 触发 failover,状态码为 0(无上游状态)。
+func TestKiroGatewayService_ForwardConnectionErrorFailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newKiroServiceWithRT(&kiroErrRoundTripper{err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
+
+	_, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false)
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("err = %v, want *UpstreamFailoverError for connection error", err)
+	}
+	if failoverErr.StatusCode != 0 {
+		t.Fatalf("connection-error failover status = %d, want 0", failoverErr.StatusCode)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("failover must not write body, got %q", rec.Body.String())
+	}
+	assertKiroOpsEvent(t, c, 0, "failover")
+}
+
+// TestKiroGatewayService_ForwardPropagatesRetryAfterHeader 验证:上游 429 的 Retry-After 头
+// 通过 UpstreamError.Headers 传播到 UpstreamFailoverError.ResponseHeaders。
+func TestKiroGatewayService_ForwardPropagatesRetryAfterHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	hdr := make(http.Header)
+	hdr.Set("Retry-After", "42")
+	hdr.Set("x-amzn-RequestId", "req-123")
+	svc := newKiroServiceWithRT(&kiroRespRoundTripper{status: http.StatusTooManyRequests, body: `{"message":"slow down"}`, header: hdr})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"messages":[{"role":"user","content":"x"}]}`)
+
+	_, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false)
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("err = %v, want *UpstreamFailoverError", err)
+	}
+	if failoverErr.ResponseHeaders.Get("Retry-After") != "42" {
+		t.Fatalf("ResponseHeaders Retry-After = %q, want 42", failoverErr.ResponseHeaders.Get("Retry-After"))
+	}
+	// upstream request id 应进入 ops 遥测。
+	if evs := kiroOpsEvents(c); len(evs) != 1 || evs[0].UpstreamRequestID != "req-123" {
+		t.Fatalf("ops upstream_request_id = %+v, want req-123", evs)
+	}
+}
+
+func kiroOpsEvents(c *gin.Context) []*OpsUpstreamErrorEvent {
+	v, ok := c.Get(OpsUpstreamErrorsKey)
+	if !ok {
+		return nil
+	}
+	evs, _ := v.([]*OpsUpstreamErrorEvent)
+	return evs
+}
+
+func assertKiroOpsEvent(t *testing.T, c *gin.Context, wantStatus int, wantKind string) {
+	t.Helper()
+	evs := kiroOpsEvents(c)
+	if len(evs) != 1 {
+		t.Fatalf("ops upstream errors = %d, want exactly 1", len(evs))
+	}
+	if evs[0].UpstreamStatusCode != wantStatus {
+		t.Fatalf("ops event status = %d, want %d", evs[0].UpstreamStatusCode, wantStatus)
+	}
+	if evs[0].Kind != wantKind {
+		t.Fatalf("ops event kind = %q, want %q", evs[0].Kind, wantKind)
+	}
+	if evs[0].Platform != PlatformKiro {
+		t.Fatalf("ops event platform = %q, want %q", evs[0].Platform, PlatformKiro)
 	}
 }
 

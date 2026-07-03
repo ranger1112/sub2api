@@ -191,6 +191,7 @@ func TestCollectMessages_EndToEnd(t *testing.T) {
 func TestStreamMessages_UpstreamError(t *testing.T) {
 	withFixedUUID(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "17")
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(`{"reason":"MONTHLY_REQUEST_COUNT"}`))
 	}))
@@ -210,6 +211,10 @@ func TestStreamMessages_UpstreamError(t *testing.T) {
 	}
 	if ue.StatusCode != http.StatusForbidden || !strings.Contains(ue.Body, "MONTHLY_REQUEST_COUNT") {
 		t.Fatalf("UpstreamError = %+v", ue)
+	}
+	// 响应头应被克隆到 UpstreamError.Headers,供上层透传 Retry-After。
+	if ue.Headers == nil || ue.Headers.Get("Retry-After") != "17" {
+		t.Fatalf("UpstreamError.Headers Retry-After = %q, want 17", ue.Headers.Get("Retry-After"))
 	}
 }
 
