@@ -23,6 +23,21 @@ const (
 // DefaultThinkingSuffix 是识别 thinking 模式的默认模型名后缀。
 const DefaultThinkingSuffix = "-thinking"
 
+// ServedModels 返回 Kiro 上游实际服务的规范模型 ID 列表(与 MapModel 的输出集合一致)。
+// 用于账号「可用模型」列表与「同步上游模型」:Kiro 无 /v1/models 端点、模型集固定,
+// 直接返回该静态集合,避免把 Kiro 不服务的 Claude 老模型暴露到下拉/映射里。
+func ServedModels() []string {
+	return []string{
+		ModelSonnet46,
+		ModelSonnet45,
+		ModelOpus48,
+		ModelOpus47,
+		ModelOpus46,
+		ModelOpus45,
+		ModelHaiku45,
+	}
+}
+
 // MapModel 把客户端传入的 Anthropic 模型名映射到 Kiro 支持的模型 ID。
 //
 // 采用严格版本匹配(对照 kiro.rs 的 map_model 实现):Kiro 仅服务

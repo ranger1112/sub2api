@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 )
 
 const upstreamModelsBodyLimit int64 = 8 << 20
@@ -83,6 +84,11 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 
 	if account.Platform == PlatformAntigravity && account.Type != AccountTypeAPIKey {
 		return s.fetchAntigravityOAuthUpstreamModels(ctx, account)
+	}
+
+	// Kiro 上游没有 /v1/models 端点、服务的模型集是固定的,直接返回 Kiro 服务的规范模型集。
+	if account.Platform == PlatformKiro {
+		return kiro.ServedModels(), nil
 	}
 
 	if s.httpUpstream == nil {

@@ -9,8 +9,21 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFetchUpstreamSupportedModels_Kiro(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{}
+	models, err := svc.FetchUpstreamSupportedModels(
+		context.Background(),
+		&Account{Platform: PlatformKiro, Type: AccountTypeOAuth},
+	)
+	require.NoError(t, err)
+	require.ElementsMatch(t, kiro.ServedModels(), models)
+}
 
 func upstreamModelSyncTestConfig() *config.Config {
 	return &config.Config{
