@@ -26,8 +26,136 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <!-- API Key fields (only for apikey type) -->
-      <div v-if="account.type === 'apikey'" class="space-y-4">
+      <!-- Kiro credential fields -->
+      <div v-if="account.platform === 'kiro'" class="space-y-4">
+        <template v-if="account.type === 'oauth'">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.authMethodLabel') }}</label>
+            <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                @click="editKiroAuthMethod = 'social'"
+                :class="[
+                  'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                  editKiroAuthMethod === 'social'
+                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20'
+                    : 'border-gray-200 hover:border-teal-300 dark:border-dark-600 dark:hover:border-teal-700'
+                ]"
+              >
+                <div>
+                  <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.kiro.authMethodSocial') }}</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.kiro.authMethodSocialDesc') }}</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                @click="editKiroAuthMethod = 'idc'"
+                :class="[
+                  'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                  editKiroAuthMethod === 'idc'
+                    ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20'
+                    : 'border-gray-200 hover:border-teal-300 dark:border-dark-600 dark:hover:border-teal-700'
+                ]"
+              >
+                <div>
+                  <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.kiro.authMethodIdc') }}</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.kiro.authMethodIdcDesc') }}</span>
+                </div>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.refreshTokenLabel') }}</label>
+            <input
+              v-model="editKiroRefreshToken"
+              type="password"
+              autocomplete="new-password"
+              class="input font-mono"
+              :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.kiro.editSecretKeepHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.accessTokenLabel') }}</label>
+            <input
+              v-model="editKiroAccessToken"
+              type="password"
+              autocomplete="new-password"
+              class="input font-mono"
+              :placeholder="t('admin.accounts.kiro.accessTokenPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.kiro.editSecretKeepHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+            <input
+              v-model="editKiroProfileArn"
+              type="text"
+              class="input font-mono"
+              :placeholder="t('admin.accounts.kiro.profileArnPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.kiro.profileArnHint') }}</p>
+          </div>
+          <div v-if="editKiroAuthMethod === 'idc'" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
+              <input
+                v-model="editKiroClientId"
+                type="text"
+                class="input font-mono"
+                :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')"
+              />
+              <p class="input-hint">{{ t('admin.accounts.kiro.clientIdHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.clientSecretLabel') }}</label>
+              <input
+                v-model="editKiroClientSecret"
+                type="password"
+                autocomplete="new-password"
+                class="input font-mono"
+                :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
+              />
+              <p class="input-hint">{{ t('admin.accounts.kiro.editSecretKeepHint') }}</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.regionLabel') }}</label>
+              <input v-model="editKiroRegion" type="text" class="input font-mono" :placeholder="t('admin.accounts.kiro.regionPlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.authRegionLabel') }}</label>
+              <input v-model="editKiroAuthRegion" type="text" class="input font-mono" :placeholder="t('admin.accounts.kiro.authRegionPlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.apiRegionLabel') }}</label>
+              <input v-model="editKiroApiRegion" type="text" class="input font-mono" :placeholder="t('admin.accounts.kiro.apiRegionPlaceholder')" />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
+              <input v-model="editKiroMachineId" type="text" class="input font-mono" :placeholder="t('admin.accounts.kiro.machineIdPlaceholder')" />
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.kiro.oauthHint') }}</p>
+        </template>
+        <template v-else-if="account.type === 'apikey'">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.apiKeyLabel') }}</label>
+            <input
+              v-model="editKiroApiKey"
+              type="password"
+              autocomplete="new-password"
+              class="input font-mono"
+              :placeholder="t('admin.accounts.kiro.apiKeyPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.kiro.editSecretKeepHint') }}</p>
+          </div>
+        </template>
+      </div>
+
+      <!-- API Key fields (only for apikey type; Kiro has its own fields) -->
+      <div v-if="account.type === 'apikey' && account.platform !== 'kiro'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -2433,7 +2561,10 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import {
   applyAntigravityProjectID,
-  applyInterceptWarmup
+  applyInterceptWarmup,
+  buildKiroCredentials,
+  type KiroAuthMethod,
+  type KiroCredentialInputs
 } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
@@ -2505,6 +2636,19 @@ interface TempUnschedRuleForm {
 const submitting = ref(false)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
+
+// Kiro credential edit inputs (secrets are blank => keep existing value)
+const editKiroAuthMethod = ref<KiroAuthMethod>('social')
+const editKiroAccessToken = ref('')
+const editKiroRefreshToken = ref('')
+const editKiroProfileArn = ref('')
+const editKiroRegion = ref('')
+const editKiroAuthRegion = ref('')
+const editKiroApiRegion = ref('')
+const editKiroMachineId = ref('')
+const editKiroClientId = ref('')
+const editKiroClientSecret = ref('')
+const editKiroApiKey = ref('')
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
@@ -3260,6 +3404,30 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     selectedErrorCodes.value = []
   }
   editApiKey.value = ''
+
+  // Populate Kiro credential inputs (non-secret fields prefilled; secrets left blank)
+  if (newAccount.platform === 'kiro') {
+    const kiroCreds = (newAccount.credentials as Record<string, unknown>) || {}
+    editKiroAuthMethod.value = kiroCreds.auth_method === 'idc' ? 'idc' : 'social'
+    editKiroProfileArn.value = typeof kiroCreds.profile_arn === 'string' ? kiroCreds.profile_arn : ''
+    editKiroRegion.value = typeof kiroCreds.region === 'string' ? kiroCreds.region : ''
+    editKiroAuthRegion.value = typeof kiroCreds.auth_region === 'string' ? kiroCreds.auth_region : ''
+    editKiroApiRegion.value = typeof kiroCreds.api_region === 'string' ? kiroCreds.api_region : ''
+    editKiroMachineId.value = typeof kiroCreds.machine_id === 'string' ? kiroCreds.machine_id : ''
+    editKiroClientId.value = typeof kiroCreds.client_id === 'string' ? kiroCreds.client_id : ''
+  } else {
+    editKiroAuthMethod.value = 'social'
+    editKiroProfileArn.value = ''
+    editKiroRegion.value = ''
+    editKiroAuthRegion.value = ''
+    editKiroApiRegion.value = ''
+    editKiroMachineId.value = ''
+    editKiroClientId.value = ''
+  }
+  editKiroAccessToken.value = ''
+  editKiroRefreshToken.value = ''
+  editKiroClientSecret.value = ''
+  editKiroApiKey.value = ''
 }
 
 async function loadTLSProfiles() {
@@ -3757,8 +3925,37 @@ const handleSubmit = async () => {
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
 
-    // For apikey type, handle credentials update
-    if (props.account.type === 'apikey') {
+    // For Kiro accounts, merge credential fields (blank secrets keep existing values)
+    if (props.account.platform === 'kiro') {
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const kiroInputs: KiroCredentialInputs = {
+        accountType: props.account.type === 'apikey' ? 'apikey' : 'oauth',
+        authMethod: editKiroAuthMethod.value,
+        accessToken: editKiroAccessToken.value,
+        refreshToken: editKiroRefreshToken.value,
+        profileArn: editKiroProfileArn.value,
+        region: editKiroRegion.value,
+        authRegion: editKiroAuthRegion.value,
+        apiRegion: editKiroApiRegion.value,
+        machineId: editKiroMachineId.value,
+        clientId: editKiroClientId.value,
+        clientSecret: editKiroClientSecret.value,
+        apiKey: editKiroApiKey.value
+      }
+      const newCredentials: Record<string, unknown> = {
+        ...currentCredentials,
+        ...buildKiroCredentials(kiroInputs)
+      }
+      // Drop stale IdC secrets when the account uses the social auth method
+      if (props.account.type === 'oauth' && editKiroAuthMethod.value === 'social') {
+        delete newCredentials.client_id
+        delete newCredentials.client_secret
+      }
+      if (!applyTempUnschedConfig(newCredentials)) {
+        return
+      }
+      updatePayload.credentials = newCredentials
+    } else if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
