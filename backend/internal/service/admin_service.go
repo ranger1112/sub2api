@@ -2808,6 +2808,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
 		// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
 		account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
+		// Kiro 切到 social 时清理 IdC 专属凭据：client_id/client_secret 仅 IdC 刷新需要，
+		// social 刷新不读；且 client_secret 是敏感键，会被上面的合并从旧值恢复，故这里显式清掉，
+		// 贯彻前端"切 social 清密钥"的意图，避免陈旧 IdC 密钥以密文残留。
+		if account.Platform == PlatformKiro && account.GetCredential("auth_method") == "social" {
+			delete(account.Credentials, "client_secret")
+			delete(account.Credentials, "client_id")
+		}
 	}
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。

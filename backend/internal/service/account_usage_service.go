@@ -104,6 +104,11 @@ type antigravityUsageCache struct {
 	timestamp time.Time
 }
 
+type kiroUsageCache struct {
+	usageInfo *UsageInfo
+	timestamp time.Time
+}
+
 const (
 	apiCacheTTL             = 3 * time.Minute
 	apiErrorCacheTTL        = 1 * time.Minute        // 负缓存 TTL：429 等错误缓存 1 分钟
@@ -119,8 +124,10 @@ type UsageCache struct {
 	apiCache          sync.Map           // accountID -> *apiUsageCache
 	windowStatsCache  sync.Map           // accountID -> *windowStatsCache
 	antigravityCache  sync.Map           // accountID -> *antigravityUsageCache
+	kiroCache         sync.Map           // accountID -> *kiroUsageCache
 	apiFlight         singleflight.Group // 防止同一账号的并发请求击穿缓存（Anthropic）
 	antigravityFlight singleflight.Group // 防止同一 Antigravity 账号的并发请求击穿缓存
+	kiroFlight        singleflight.Group // 防止同一 Kiro 账号的并发 getUsageLimits 击穿缓存
 	openAIProbeCache  sync.Map           // accountID -> time.Time
 }
 
@@ -931,33 +938,82 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 	return usage, nil
 }
 
-// getKiroUsage 获取 Kiro 账户额度/用量。
-// 通过 KiroQuotaFetcher 调 getUsageLimits;上游 401/403/429 已在 FetchQuota 内部
-// 降级为带 error_code 的 UsageInfo(err=nil),其余错误(网络/5xx/解析)在此降级为
-// 带 error 的 UsageInfo(而非 500),与 antigravity/grok 面板体验一致。
+// getKiroUsage 获取 Kiro 账户额度/用量(经 getUsageLimits)。
+// 与 antigravity 一致:短 TTL 缓存 + singleflight 去重,避免面板批量/并发拉取时对上游
+// 造成 getUsageLimits 请求风暴;返回前叠加账号已落库的错误状态(封禁/需验证)。
+// 上游 401/403/429 已在 FetchQuota 内降级为带 error_code 的 UsageInfo(err=nil),
+// 其余错误(网络/5xx/解析)在此降级为带 error 的 UsageInfo(而非 500)。
 func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
-	now := time.Now()
+	_ = ctx // 使用独立 context 拉取,避免调用方 cancel 击穿共享 flight
 	if s.kiroQuotaFetcher == nil {
+		now := time.Now()
 		return &UsageInfo{UpdatedAt: &now}, nil
 	}
 
-	proxyURL := ""
-	if account != nil && account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	// 1. 缓存命中(复用 antigravityCacheTTL:403 稳定=3min,其它错误=1min)
+	if cached, ok := s.cache.kiroCache.Load(account.ID); ok {
+		if cache, ok := cached.(*kiroUsageCache); ok {
+			if time.Since(cache.timestamp) < antigravityCacheTTL(cache.usageInfo) {
+				recalcAntigravityRemainingSeconds(cache.usageInfo)
+				return cache.usageInfo, nil
+			}
+		}
 	}
 
-	result, err := s.kiroQuotaFetcher.FetchQuota(ctx, account, proxyURL)
-	if err != nil {
-		return &UsageInfo{
-			UpdatedAt: &now,
-			Error:     fmt.Sprintf("usage API error: %v", err),
-			ErrorCode: errorCodeNetworkError,
-		}, nil
+	// 2. singleflight 防止并发击穿
+	flightKey := fmt.Sprintf("kiro-usage:%d", account.ID)
+	result, flightErr, _ := s.cache.kiroFlight.Do(flightKey, func() (any, error) {
+		if cached, ok := s.cache.kiroCache.Load(account.ID); ok {
+			if cache, ok := cached.(*kiroUsageCache); ok {
+				if time.Since(cache.timestamp) < antigravityCacheTTL(cache.usageInfo) {
+					recalcAntigravityRemainingSeconds(cache.usageInfo)
+					return cache.usageInfo, nil
+				}
+			}
+		}
+
+		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer fetchCancel()
+
+		proxyURL := ""
+		if account != nil && account.ProxyID != nil && account.Proxy != nil {
+			proxyURL = account.Proxy.URL()
+		}
+
+		var usage *UsageInfo
+		fetchResult, err := s.kiroQuotaFetcher.FetchQuota(fetchCtx, account, proxyURL)
+		switch {
+		case err != nil:
+			now := time.Now()
+			usage = &UsageInfo{
+				UpdatedAt: &now,
+				Error:     fmt.Sprintf("usage API error: %v", err),
+				ErrorCode: errorCodeNetworkError,
+			}
+		case fetchResult == nil || fetchResult.UsageInfo == nil:
+			now := time.Now()
+			usage = &UsageInfo{UpdatedAt: &now}
+		default:
+			usage = fetchResult.UsageInfo
+		}
+
+		enrichUsageWithAccountError(usage, account)
+		s.cache.kiroCache.Store(account.ID, &kiroUsageCache{
+			usageInfo: usage,
+			timestamp: time.Now(),
+		})
+		return usage, nil
+	})
+
+	if flightErr != nil {
+		return nil, flightErr
 	}
-	if result == nil || result.UsageInfo == nil {
+	usage, ok := result.(*UsageInfo)
+	if !ok || usage == nil {
+		now := time.Now()
 		return &UsageInfo{UpdatedAt: &now}, nil
 	}
-	return result.UsageInfo, nil
+	return usage, nil
 }
 
 // recalcAntigravityRemainingSeconds 重新计算 Antigravity UsageInfo 中各窗口的 RemainingSeconds
