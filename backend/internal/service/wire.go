@@ -180,6 +180,22 @@ func ProvideGrokTokenProvider(
 	return p
 }
 
+// ProvideKiroTokenProvider creates KiroTokenProvider with OAuthRefreshAPI injection.
+func ProvideKiroTokenProvider(
+	accountRepo AccountRepository,
+	tokenCache GeminiTokenCache,
+	kiroOAuthService *KiroOAuthService,
+	refreshAPI *OAuthRefreshAPI,
+	tempUnschedCache TempUnschedCache,
+) *KiroTokenProvider {
+	p := NewKiroTokenProvider(accountRepo, tokenCache)
+	executor := NewKiroTokenRefresher(kiroOAuthService)
+	p.SetRefreshAPI(refreshAPI, executor)
+	p.SetRefreshPolicy(AntigravityProviderRefreshPolicy())
+	p.SetTempUnschedCache(tempUnschedCache)
+	return p
+}
+
 // ProvideDashboardAggregationService 创建并启动仪表盘聚合服务
 func ProvideDashboardAggregationService(repo DashboardAggregationRepository, timingWheel *TimingWheelService, lockCache LeaderLockCache, db *sql.DB, cfg *config.Config) *DashboardAggregationService {
 	svc := NewDashboardAggregationService(repo, timingWheel, cfg)
@@ -583,6 +599,11 @@ var ProviderSet = wire.NewSet(
 	ProvideGrokQuotaService,
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
+	NewKiroOAuthService,
+	ProvideKiroTokenProvider,
+	NewKiroGatewayService,
+	NewKiroQuotaFetcher,
+	NewKiroQuotaService,
 	ProvideRateLimitService,
 	NewAccountUsageService,
 	NewAccountTestService,

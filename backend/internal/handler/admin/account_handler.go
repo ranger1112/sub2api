@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -2126,6 +2127,23 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// Handle Kiro accounts: Kiro 服务的模型集是固定的(无 /v1/models 端点),
+	// 返回 Kiro 实际服务的模型;若账号配了 model_mapping 则以映射键为准。
+	if account.Platform == service.PlatformKiro {
+		mapping := account.GetModelMapping()
+		if len(mapping) == 0 {
+			response.Success(c, kiroModelsFromIDs(kiro.ServedModels()))
+			return
+		}
+		ids := make([]string, 0, len(mapping))
+		for requestedModel := range mapping {
+			ids = append(ids, requestedModel)
+		}
+		sort.Strings(ids)
+		response.Success(c, kiroModelsFromIDs(ids))
+		return
+	}
+
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
@@ -2165,6 +2183,24 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	}
 
 	response.Success(c, models)
+}
+
+// kiroModelsFromIDs 把 Kiro 模型 ID 列表构造成前端可用的 claude.Model 条目
+//(Kiro 是 Anthropic 协议,复用 claude.Model 形状)。
+func kiroModelsFromIDs(ids []string) []claude.Model {
+	models := make([]claude.Model, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		models = append(models, claude.Model{
+			ID:          id,
+			Type:        "model",
+			DisplayName: id,
+		})
+	}
+	return models
 }
 
 // SyncUpstreamModels handles syncing live supported models from an account's upstream.

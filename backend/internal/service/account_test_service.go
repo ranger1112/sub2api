@@ -69,6 +69,7 @@ type AccountTestService struct {
 	claudeTokenProvider       *ClaudeTokenProvider
 	grokTokenProvider         *GrokTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
+	kiroQuotaFetcher          *KiroQuotaFetcher
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
 	tlsFPProfileService       *TLSFingerprintProfileService
@@ -84,6 +85,7 @@ func NewAccountTestService(
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	kiroQuotaFetcher *KiroQuotaFetcher,
 ) *AccountTestService {
 	return &AccountTestService{
 		accountRepo:               accountRepo,
@@ -91,6 +93,7 @@ func NewAccountTestService(
 		claudeTokenProvider:       claudeTokenProvider,
 		grokTokenProvider:         grokTokenProvider,
 		antigravityGatewayService: antigravityGatewayService,
+		kiroQuotaFetcher:          kiroQuotaFetcher,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
 		tlsFPProfileService:       tlsFPProfileService,
@@ -194,6 +197,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	if account.Platform == PlatformGrok {
 		return s.testGrokAccountConnection(c, account, modelID)
+	}
+
+	if account.Platform == PlatformKiro {
+		return s.testKiroAccountConnection(c, account, modelID)
 	}
 
 	if account.Platform == PlatformAntigravity {
@@ -720,6 +727,66 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 	}
 
 	return s.processOpenAIStream(c, resp.Body)
+}
+
+// testKiroAccountConnection validates a Kiro account by issuing a lightweight
+// getUsageLimits call through the same disguise headers used for generation.
+// A 2xx (or a decoded quota snapshot) confirms the credentials are usable.
+// modelID is accepted for API symmetry but is not used by getUsageLimits.
+func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	ctx := c.Request.Context()
+
+	if account.Type != AccountTypeOAuth && account.Type != AccountTypeAPIKey {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Kiro account type: %s", account.Type))
+	}
+	if s.kiroQuotaFetcher == nil {
+		return s.sendErrorAndEnd(c, "Kiro tester not configured")
+	}
+
+	// Set SSE headers
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过最小生成请求真机校验 Kiro 账号"})
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	// 真机发一条最小非流式生成(generateAssistantResponse),而非只查 getUsageLimits,
+	// 使「测试连接」真正走通模型链路(与 Claude/OpenAI 测试分支一致)。
+	reply, degraded, err := s.kiroQuotaFetcher.TestGenerate(ctx, account, proxyURL, modelID)
+	if degraded != nil {
+		// 403(封禁)/401(凭据失效)均标记账号为 error 状态,避免死凭据继续被调度。
+		// 429 为瞬时限流,不标记。
+		if s.accountRepo != nil && (degraded.IsForbidden || degraded.NeedsReauth) {
+			errMsg := "Kiro account unauthorized (401): credentials invalid"
+			if degraded.IsForbidden {
+				errMsg = "Kiro account forbidden: " + degraded.ForbiddenReason
+			}
+			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+		}
+		msg := degraded.Error
+		if msg == "" {
+			msg = "Kiro account check failed: " + degraded.ErrorCode
+		}
+		return s.sendErrorAndEnd(c, msg)
+	}
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro test generation failed: %s", err.Error()))
+	}
+
+	if strings.TrimSpace(reply) == "" {
+		reply = "(Kiro 返回空文本,但连接与凭据有效)"
+	}
+	s.sendEvent(c, TestEvent{Type: "content", Text: reply})
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
 }
 
 // testOpenAIChatCompletionsConnection tests an OpenAI-compatible APIKey account

@@ -2509,6 +2509,10 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 	useMixed := (platform == PlatformAnthropic || platform == PlatformGemini) && !hasForcePlatform
 	if useMixed {
 		platforms := []string{platform, PlatformAntigravity}
+		// Kiro(Anthropic 协议上游)折叠进 anthropic 混合调度,与 schedulerSnapshot 路径一致。
+		if platform == PlatformAnthropic {
+			platforms = append(platforms, PlatformKiro)
+		}
 		var accounts []Account
 		var err error
 		if groupID != nil {
@@ -2605,7 +2609,12 @@ func (s *GatewayService) isAccountAllowedForPlatform(account *Account, platform 
 		if account.Platform == platform {
 			return true
 		}
-		return account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()
+		if account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled() {
+			return true
+		}
+		// Kiro(Anthropic 协议上游)折叠进 anthropic 混合调度;与 listSchedulableAccounts
+		// 的候选池构建保持一致,dispatch 再按 account.Platform 分流到 KiroGatewayService。
+		return account.Platform == PlatformKiro && platform == PlatformAnthropic
 	}
 	return account.Platform == platform
 }
@@ -10112,6 +10121,13 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	// Pre-filter: strip empty text blocks to prevent upstream 400.
 	if err := replaceBody(StripEmptyTextBlocks(body)); err != nil {
 		return err
+	}
+
+	// Kiro 账户不支持 count_tokens，返回 404 让客户端 fallback 到本地估算。
+	// 提前返回(在 OAuth 归一化之前),避免把 kiro 凭据/请求当作 Claude OAuth 处理并发往 Anthropic。
+	if account.Platform == PlatformKiro {
+		s.countTokensError(c, http.StatusNotFound, "not_found_error", "count_tokens endpoint is not supported for this platform")
+		return nil
 	}
 
 	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)

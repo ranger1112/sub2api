@@ -2,8 +2,26 @@ import { describe, it, expect } from 'vitest'
 import {
   ANTIGRAVITY_PROJECT_ID_CREDENTIAL_KEY,
   applyAntigravityProjectID,
-  applyInterceptWarmup
+  applyInterceptWarmup,
+  buildKiroCredentials,
+  validateKiroCredentials,
+  type KiroCredentialInputs
 } from '../credentialsBuilder'
+
+const baseKiroInputs = (): KiroCredentialInputs => ({
+  accountType: 'oauth',
+  authMethod: 'social',
+  accessToken: '',
+  refreshToken: '',
+  profileArn: '',
+  region: '',
+  authRegion: '',
+  apiRegion: '',
+  machineId: '',
+  clientId: '',
+  clientSecret: '',
+  apiKey: ''
+})
 
 describe('applyInterceptWarmup', () => {
   it('create + enabled=true: should set intercept_warmup_requests to true', () => {
@@ -80,5 +98,107 @@ describe('applyAntigravityProjectID', () => {
     expect(creds.project_id).toBe('onboard-project')
     expect(creds.model_mapping).toEqual({ 'gemini-*': 'gemini-2.5-flash' })
     expect(creds[ANTIGRAVITY_PROJECT_ID_CREDENTIAL_KEY]).toBe('configured-project')
+  })
+})
+
+describe('buildKiroCredentials', () => {
+  it('apikey: emits only kiro_api_key', () => {
+    const creds = buildKiroCredentials({
+      ...baseKiroInputs(),
+      accountType: 'apikey',
+      apiKey: '  kiro-key-123  '
+    })
+    expect(creds).toEqual({ kiro_api_key: 'kiro-key-123' })
+  })
+
+  it('oauth social: sets auth_method and only non-empty fields', () => {
+    const creds = buildKiroCredentials({
+      ...baseKiroInputs(),
+      authMethod: 'social',
+      refreshToken: 'rt-1',
+      accessToken: 'at-1',
+      profileArn: 'arn:aws:codewhisperer:profile/x',
+      region: 'us-east-1',
+      machineId: 'machine-1'
+    })
+    expect(creds).toEqual({
+      auth_method: 'social',
+      refresh_token: 'rt-1',
+      access_token: 'at-1',
+      profile_arn: 'arn:aws:codewhisperer:profile/x',
+      region: 'us-east-1',
+      machine_id: 'machine-1'
+    })
+    expect('client_id' in creds).toBe(false)
+    expect('client_secret' in creds).toBe(false)
+    expect('expires_at' in creds).toBe(false)
+  })
+
+  it('oauth idc: includes client credentials', () => {
+    const creds = buildKiroCredentials({
+      ...baseKiroInputs(),
+      authMethod: 'idc',
+      refreshToken: 'rt-2',
+      clientId: 'client-1',
+      clientSecret: 'secret-1',
+      authRegion: 'us-west-2',
+      apiRegion: 'eu-west-1'
+    })
+    expect(creds).toMatchObject({
+      auth_method: 'idc',
+      refresh_token: 'rt-2',
+      client_id: 'client-1',
+      client_secret: 'secret-1',
+      auth_region: 'us-west-2',
+      api_region: 'eu-west-1'
+    })
+  })
+
+  it('oauth social: ignores client credentials even if present', () => {
+    const creds = buildKiroCredentials({
+      ...baseKiroInputs(),
+      authMethod: 'social',
+      refreshToken: 'rt-3',
+      clientId: 'client-x',
+      clientSecret: 'secret-x'
+    })
+    expect('client_id' in creds).toBe(false)
+    expect('client_secret' in creds).toBe(false)
+  })
+})
+
+describe('validateKiroCredentials', () => {
+  it('create apikey without key: returns error key', () => {
+    expect(validateKiroCredentials({ ...baseKiroInputs(), accountType: 'apikey' }, 'create'))
+      .toBe('admin.accounts.kiro.errors.apiKeyRequired')
+  })
+
+  it('create oauth without refresh token: returns error key', () => {
+    expect(validateKiroCredentials({ ...baseKiroInputs() }, 'create'))
+      .toBe('admin.accounts.kiro.errors.refreshTokenRequired')
+  })
+
+  it('create idc without client id/secret: returns error keys in order', () => {
+    expect(
+      validateKiroCredentials(
+        { ...baseKiroInputs(), authMethod: 'idc', refreshToken: 'rt' },
+        'create'
+      )
+    ).toBe('admin.accounts.kiro.errors.clientIdRequired')
+    expect(
+      validateKiroCredentials(
+        { ...baseKiroInputs(), authMethod: 'idc', refreshToken: 'rt', clientId: 'c' },
+        'create'
+      )
+    ).toBe('admin.accounts.kiro.errors.clientSecretRequired')
+  })
+
+  it('create valid social oauth: returns null', () => {
+    expect(validateKiroCredentials({ ...baseKiroInputs(), refreshToken: 'rt' }, 'create')).toBeNull()
+  })
+
+  it('edit mode: never errors (blank keeps existing)', () => {
+    expect(validateKiroCredentials({ ...baseKiroInputs(), accountType: 'apikey' }, 'edit')).toBeNull()
+    expect(validateKiroCredentials({ ...baseKiroInputs(), authMethod: 'idc' }, 'edit')).toBeNull()
   })
 })
