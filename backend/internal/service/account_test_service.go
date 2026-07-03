@@ -766,9 +766,13 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 
 	info := result.UsageInfo
 	if info != nil && info.ErrorCode != "" {
-		// 403 表示账号被上游封禁,标记为 error 状态(与 Claude/OpenAI 测试分支一致)。
-		if info.IsForbidden && s.accountRepo != nil {
-			errMsg := "Kiro account forbidden: " + info.ForbiddenReason
+		// 403(封禁)/401(凭据失效)均标记账号为 error 状态,避免死凭据继续被调度
+		// (与 Claude/OpenAI 测试分支一致)。429 为瞬时限流,不标记。
+		if s.accountRepo != nil && (info.IsForbidden || info.NeedsReauth) {
+			errMsg := "Kiro account unauthorized (401): credentials invalid"
+			if info.IsForbidden {
+				errMsg = "Kiro account forbidden: " + info.ForbiddenReason
+			}
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
 		msg := info.Error
