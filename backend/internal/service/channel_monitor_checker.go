@@ -99,7 +99,7 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 
 	if !validateChallenge(respText, challenge.Expected) {
 		res.Status = MonitorStatusFailed
-		res.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("challenge mismatch (expected %s, got %q)", challenge.Expected, respText)))
+		res.Message = truncateMessage(sanitizeErrorMessage(describeChallengeMismatch(challenge.Expected, respText, rawBody)))
 		return res
 	}
 
@@ -116,6 +116,31 @@ func finalizeOperationalOrDegraded(res *CheckResult, latency time.Duration, late
 	}
 	res.Status = MonitorStatusOperational
 	return res
+}
+
+// describeChallengeMismatch 构造 challenge 校验失败的诊断信息。
+//
+// 关键场景：抽取文本为空（got ""）时，上游往往是回了 2xx 但 body 其实是错误信封
+// （中转账号池空 / 瞬时限流 / 反代拦截页），只印 got "" 会把真正的原因整个丢掉，
+// 让人误以为是"模型算错"。因此当 respText 为空时，优先回填 body 里的 error 文案，
+// 否则附上原始 body 片段（复用 truncateForErrorBody 折叠空白 + 限长）。
+// 最终整串仍会经过 sanitizeErrorMessage 擦除密钥，这里无需自行脱敏。
+func describeChallengeMismatch(expected, respText, rawBody string) string {
+	if strings.TrimSpace(respText) != "" {
+		// 上游确实回了文本，只是算错——保留原始语义。
+		return fmt.Sprintf("challenge mismatch (expected %s, got %q)", expected, respText)
+	}
+	if msg := firstNonEmpty(
+		gjson.Get(rawBody, "error.message").String(),
+		gjson.Get(rawBody, "error").String(),
+		gjson.Get(rawBody, "message").String(),
+	); msg != "" {
+		return fmt.Sprintf("upstream returned 2xx with error body (expected %s): %s", expected, msg)
+	}
+	if snippet := truncateForErrorBody(rawBody); snippet != "" {
+		return fmt.Sprintf("upstream 2xx but no answer text (expected %s); body: %s", expected, snippet)
+	}
+	return fmt.Sprintf("upstream 2xx with empty body (expected %s)", expected)
 }
 
 // bodyOverrideMode 归一取 opts.BodyOverrideMode，nil opts / 空串都视为 off。
