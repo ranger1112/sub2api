@@ -154,10 +154,13 @@ func TestKiroQuotaFetcher_FetchQuota_ServerError(t *testing.T) {
 }
 
 // TestKiroAccountTestConnection_Success exercises the account-test branch end to end
-// via an in-memory gin context, asserting the SSE stream reports success.
+// via an in-memory gin context. The test-connection now issues a real minimal
+// generation (generateAssistantResponse), so the mock upstream returns an AWS
+// EventStream frame carrying the assistant reply; the SSE stream must surface that
+// reply text and report success.
 func TestKiroAccountTestConnection_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	body := `{"subscriptionType":"PRO","usageBreakdownList":[{"resourceType":"CREDIT","usageLimit":100,"currentUsage":40}]}`
+	body := string(kiroTestFrame("assistantResponseEvent", `{"content":"OK"}`))
 	f := newKiroFetcherWithResponse(t, http.StatusOK, body, nil)
 	svc := &AccountTestService{kiroQuotaFetcher: f}
 
@@ -172,8 +175,8 @@ func TestKiroAccountTestConnection_Success(t *testing.T) {
 	if !strings.Contains(out, `"type":"test_complete"`) || !strings.Contains(out, `"success":true`) {
 		t.Fatalf("expected success completion, got: %s", out)
 	}
-	if !strings.Contains(out, "Kiro credentials are valid") {
-		t.Fatalf("expected credential summary, got: %s", out)
+	if !strings.Contains(out, "OK") {
+		t.Fatalf("expected upstream reply text in output, got: %s", out)
 	}
 }
 

@@ -734,14 +734,13 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 // A 2xx (or a decoded quota snapshot) confirms the credentials are usable.
 // modelID is accepted for API symmetry but is not used by getUsageLimits.
 func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *Account, modelID string) error {
-	_ = modelID
 	ctx := c.Request.Context()
 
 	if account.Type != AccountTypeOAuth && account.Type != AccountTypeAPIKey {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Kiro account type: %s", account.Type))
 	}
 	if s.kiroQuotaFetcher == nil {
-		return s.sendErrorAndEnd(c, "Kiro quota fetcher not configured")
+		return s.sendErrorAndEnd(c, "Kiro tester not configured")
 	}
 
 	// Set SSE headers
@@ -752,55 +751,42 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	c.Writer.Flush()
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
-	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过 getUsageLimits 校验 Kiro 凭据"})
+	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过最小生成请求真机校验 Kiro 账号"})
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 
-	result, err := s.kiroQuotaFetcher.FetchQuota(ctx, account, proxyURL)
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro getUsageLimits request failed: %s", err.Error()))
-	}
-
-	info := result.UsageInfo
-	if info != nil && info.ErrorCode != "" {
-		// 403(封禁)/401(凭据失效)均标记账号为 error 状态,避免死凭据继续被调度
-		// (与 Claude/OpenAI 测试分支一致)。429 为瞬时限流,不标记。
-		if s.accountRepo != nil && (info.IsForbidden || info.NeedsReauth) {
+	// 真机发一条最小非流式生成(generateAssistantResponse),而非只查 getUsageLimits,
+	// 使「测试连接」真正走通模型链路(与 Claude/OpenAI 测试分支一致)。
+	reply, degraded, err := s.kiroQuotaFetcher.TestGenerate(ctx, account, proxyURL, modelID)
+	if degraded != nil {
+		// 403(封禁)/401(凭据失效)均标记账号为 error 状态,避免死凭据继续被调度。
+		// 429 为瞬时限流,不标记。
+		if s.accountRepo != nil && (degraded.IsForbidden || degraded.NeedsReauth) {
 			errMsg := "Kiro account unauthorized (401): credentials invalid"
-			if info.IsForbidden {
-				errMsg = "Kiro account forbidden: " + info.ForbiddenReason
+			if degraded.IsForbidden {
+				errMsg = "Kiro account forbidden: " + degraded.ForbiddenReason
 			}
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		msg := info.Error
+		msg := degraded.Error
 		if msg == "" {
-			msg = "Kiro quota check failed: " + info.ErrorCode
+			msg = "Kiro account check failed: " + degraded.ErrorCode
 		}
 		return s.sendErrorAndEnd(c, msg)
 	}
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro test generation failed: %s", err.Error()))
+	}
 
-	s.sendEvent(c, TestEvent{Type: "content", Text: summarizeKiroUsage(info)})
+	if strings.TrimSpace(reply) == "" {
+		reply = "(Kiro 返回空文本,但连接与凭据有效)"
+	}
+	s.sendEvent(c, TestEvent{Type: "content", Text: reply})
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
-}
-
-// summarizeKiroUsage builds a short human-readable summary of a successful
-// Kiro getUsageLimits response for the test UI.
-func summarizeKiroUsage(info *UsageInfo) string {
-	if info == nil {
-		return "Kiro credentials are valid"
-	}
-	parts := []string{"Kiro credentials are valid"}
-	if info.SubscriptionTierRaw != "" {
-		parts = append(parts, "subscription: "+info.SubscriptionTierRaw)
-	}
-	if info.FiveHour != nil && info.FiveHour.LimitRequests > 0 {
-		parts = append(parts, fmt.Sprintf("usage: %d/%d", info.FiveHour.UsedRequests, info.FiveHour.LimitRequests))
-	}
-	return strings.Join(parts, "; ")
 }
 
 // testOpenAIChatCompletionsConnection tests an OpenAI-compatible APIKey account

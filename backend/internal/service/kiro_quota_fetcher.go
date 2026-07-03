@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 const (
 	kiroQuotaUpstreamTimeout = 20 * time.Second
 	kiroQuotaMaxBody         = 256 * 1024
+	kiroTestGenerateTimeout  = 30 * time.Second
 )
 
 // KiroQuotaFetcher 通过 Kiro getUsageLimits 端点获取账号配额/用量。
@@ -160,4 +162,85 @@ func buildKiroUsageInfo(limits *kiro.UsageLimits) *UsageInfo {
 		info.FiveHour = progress
 	}
 	return info
+}
+
+// TestGenerate 用一次最小的非流式生成请求真机验证 Kiro 账号(供「测试连接」使用):
+// 校验模型可映射 → 取 token → 调 generateAssistantResponse → 返回上游回复文本。
+// 复用 QuotaFetcher 已持有的 tokenProvider / clientFor / cfg,无需额外注入。
+//
+// 返回值语义(与 FetchQuota 一致):上游 401/403/429 作为降级 *UsageInfo 返回(err=nil),
+// 供调用方据此标记账号状态;其余错误(模型不支持 / 网络 / 5xx / 解析)返回 error。
+func (f *KiroQuotaFetcher) TestGenerate(ctx context.Context, account *Account, proxyURL, modelID string) (reply string, degraded *UsageInfo, err error) {
+	if f == nil || f.tokenProvider == nil {
+		return "", nil, errors.New("kiro tester is not configured")
+	}
+	if account == nil || account.Platform != PlatformKiro {
+		return "", nil, errors.New("account is not a Kiro account")
+	}
+	model := strings.TrimSpace(modelID)
+	if model == "" {
+		model = kiro.ModelSonnet45
+	}
+	if _, ok := kiro.MapModel(model); !ok {
+		return "", nil, fmt.Errorf("model %q is not supported by Kiro", model)
+	}
+
+	token, err := f.tokenProvider.GetAccessToken(ctx, account)
+	if err != nil {
+		return "", nil, fmt.Errorf("acquire kiro token: %w", err)
+	}
+	cred := AccountToKiroCredentials(account)
+	if !cred.IsAPIKeyCredential() {
+		cred.AccessToken = token
+	}
+	client, err := f.clientFor(proxyURL)
+	if err != nil {
+		return "", nil, fmt.Errorf("build kiro http client: %w", err)
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, kiroTestGenerateTimeout)
+	defer cancel()
+	req := &kiro.AnthropicRequest{
+		Model:     model,
+		MaxTokens: 16,
+		Messages: []kiro.AnthropicMessage{
+			{Role: "user", Content: json.RawMessage(`"Reply with the single word: OK"`)},
+		},
+	}
+	msg, _, callErr := kiro.CollectMessages(callCtx, client, &cred, f.cfg, req)
+	if callErr != nil {
+		var ue *kiro.UpstreamError
+		if errors.As(callErr, &ue) {
+			switch ue.StatusCode {
+			case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
+				return "", kiroDegradedUsage(ue.StatusCode, []byte(ue.Body)), nil
+			}
+		}
+		return "", nil, callErr
+	}
+	return kiroExtractText(msg), nil, nil
+}
+
+// kiroExtractText 从拼装后的 Anthropic 消息中拼接所有 text 块的文本(忽略 thinking / tool_use)。
+func kiroExtractText(msg map[string]any) string {
+	if msg == nil {
+		return ""
+	}
+	content, ok := msg["content"].([]any)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	for _, blk := range content {
+		m, ok := blk.(map[string]any)
+		if !ok {
+			continue
+		}
+		if m["type"] == "text" {
+			if t, ok := m["text"].(string); ok {
+				b.WriteString(t)
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
