@@ -2509,6 +2509,10 @@ func (s *GatewayService) listSchedulableAccounts(ctx context.Context, groupID *i
 	useMixed := (platform == PlatformAnthropic || platform == PlatformGemini) && !hasForcePlatform
 	if useMixed {
 		platforms := []string{platform, PlatformAntigravity}
+		// Kiro(Anthropic 协议上游)折叠进 anthropic 混合调度,与 schedulerSnapshot 路径一致。
+		if platform == PlatformAnthropic {
+			platforms = append(platforms, PlatformKiro)
+		}
 		var accounts []Account
 		var err error
 		if groupID != nil {
@@ -2605,7 +2609,12 @@ func (s *GatewayService) isAccountAllowedForPlatform(account *Account, platform 
 		if account.Platform == platform {
 			return true
 		}
-		return account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()
+		if account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled() {
+			return true
+		}
+		// Kiro(Anthropic 协议上游)折叠进 anthropic 混合调度;与 listSchedulableAccounts
+		// 的候选池构建保持一致,dispatch 再按 account.Platform 分流到 KiroGatewayService。
+		return account.Platform == PlatformKiro && platform == PlatformAnthropic
 	}
 	return account.Platform == platform
 }

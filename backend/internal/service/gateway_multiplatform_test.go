@@ -3404,3 +3404,30 @@ func TestGatewayService_ResolveGatewayGroup_DetectsFallbackCycle(t *testing.T) {
 	require.Nil(t, gotID)
 	require.Contains(t, err.Error(), "fallback group cycle")
 }
+
+// TestIsAccountAllowedForPlatform_Kiro 锁定 Kiro 折叠进 anthropic 混合调度的门禁行为:
+// Kiro 账号(Anthropic 协议上游)仅在 anthropic 混合调度下放行,不进 gemini,也不进
+// 非混合(精确平台匹配)的 anthropic。回归保护:防止选号侧再次漏掉 kiro 导致 /v1/messages 503。
+func TestIsAccountAllowedForPlatform_Kiro(t *testing.T) {
+	svc := &GatewayService{}
+	cases := []struct {
+		name         string
+		acctPlatform string
+		platform     string
+		useMixed     bool
+		want         bool
+	}{
+		{"kiro allowed in anthropic mixed", PlatformKiro, PlatformAnthropic, true, true},
+		{"kiro not allowed in gemini mixed", PlatformKiro, PlatformGemini, true, false},
+		{"kiro not allowed in non-mixed anthropic", PlatformKiro, PlatformAnthropic, false, false},
+		{"anthropic allowed in anthropic mixed", PlatformAnthropic, PlatformAnthropic, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			acc := &Account{Platform: tc.acctPlatform}
+			got := svc.isAccountAllowedForPlatform(acc, tc.platform, tc.useMixed)
+			require.Equalf(t, tc.want, got,
+				"isAccountAllowedForPlatform(platform=%s, target=%s, mixed=%v)", tc.acctPlatform, tc.platform, tc.useMixed)
+		})
+	}
+}

@@ -507,6 +507,13 @@ func (s *SchedulerSnapshotService) rebuildByAccount(ctx context.Context, account
 			firstErr = err
 		}
 	}
+	// Kiro 账号折叠进 anthropic 混合调度,变更时同步重建 anthropic 桶(仅 anthropic,
+	// 不含 gemini),避免 kiro 账号状态变化(如被标记 error)延迟反映到 anthropic 候选池。
+	if account.Platform == PlatformKiro {
+		if err := s.rebuildBucketsForPlatform(ctx, PlatformAnthropic, groupIDs, reason, seen); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
 	return firstErr
 }
 
@@ -678,6 +685,12 @@ func (s *SchedulerSnapshotService) loadAccountsFromDB(ctx context.Context, bucke
 
 	if useMixed {
 		platforms := []string{bucket.Platform, PlatformAntigravity}
+		// Kiro 是 Anthropic 协议上游,账号挂在 anthropic 分组下(platform="kiro")。
+		// 把 kiro 折叠进 anthropic 的混合调度(不含 gemini),使 anthropic 选号路径
+		// 能把 kiro 账号纳入候选;dispatch 再按 account.Platform 分流到 KiroGatewayService。
+		if bucket.Platform == PlatformAnthropic {
+			platforms = append(platforms, PlatformKiro)
+		}
 		var accounts []Account
 		var err error
 		if groupID > 0 {
