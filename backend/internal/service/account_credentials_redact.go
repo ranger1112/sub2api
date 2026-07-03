@@ -10,6 +10,8 @@ var SensitiveCredentialKeys = []string{
 	// 云服务凭据
 	"aws_secret_access_key", "aws_session_token",
 	"service_account_json", "service_account", "private_key",
+	// Kiro:apikey 账号的完整密钥 + IdC OAuth 刷新密钥
+	"kiro_api_key", "client_secret",
 }
 
 var sensitiveCredentialKeySet = func() map[string]struct{} {
