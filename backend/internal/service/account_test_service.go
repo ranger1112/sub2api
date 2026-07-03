@@ -69,6 +69,7 @@ type AccountTestService struct {
 	claudeTokenProvider       *ClaudeTokenProvider
 	grokTokenProvider         *GrokTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
+	kiroQuotaFetcher          *KiroQuotaFetcher
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
 	tlsFPProfileService       *TLSFingerprintProfileService
@@ -84,6 +85,7 @@ func NewAccountTestService(
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	kiroQuotaFetcher *KiroQuotaFetcher,
 ) *AccountTestService {
 	return &AccountTestService{
 		accountRepo:               accountRepo,
@@ -91,6 +93,7 @@ func NewAccountTestService(
 		claudeTokenProvider:       claudeTokenProvider,
 		grokTokenProvider:         grokTokenProvider,
 		antigravityGatewayService: antigravityGatewayService,
+		kiroQuotaFetcher:          kiroQuotaFetcher,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
 		tlsFPProfileService:       tlsFPProfileService,
@@ -194,6 +197,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	if account.Platform == PlatformGrok {
 		return s.testGrokAccountConnection(c, account, modelID)
+	}
+
+	if account.Platform == PlatformKiro {
+		return s.testKiroAccountConnection(c, account, modelID)
 	}
 
 	if account.Platform == PlatformAntigravity {
@@ -720,6 +727,76 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 	}
 
 	return s.processOpenAIStream(c, resp.Body)
+}
+
+// testKiroAccountConnection validates a Kiro account by issuing a lightweight
+// getUsageLimits call through the same disguise headers used for generation.
+// A 2xx (or a decoded quota snapshot) confirms the credentials are usable.
+// modelID is accepted for API symmetry but is not used by getUsageLimits.
+func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	_ = modelID
+	ctx := c.Request.Context()
+
+	if account.Type != AccountTypeOAuth && account.Type != AccountTypeAPIKey {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Kiro account type: %s", account.Type))
+	}
+	if s.kiroQuotaFetcher == nil {
+		return s.sendErrorAndEnd(c, "Kiro quota fetcher not configured")
+	}
+
+	// Set SSE headers
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
+	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过 getUsageLimits 校验 Kiro 凭据"})
+
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	result, err := s.kiroQuotaFetcher.FetchQuota(ctx, account, proxyURL)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro getUsageLimits request failed: %s", err.Error()))
+	}
+
+	info := result.UsageInfo
+	if info != nil && info.ErrorCode != "" {
+		// 403 表示账号被上游封禁,标记为 error 状态(与 Claude/OpenAI 测试分支一致)。
+		if info.IsForbidden && s.accountRepo != nil {
+			errMsg := "Kiro account forbidden: " + info.ForbiddenReason
+			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
+		}
+		msg := info.Error
+		if msg == "" {
+			msg = "Kiro quota check failed: " + info.ErrorCode
+		}
+		return s.sendErrorAndEnd(c, msg)
+	}
+
+	s.sendEvent(c, TestEvent{Type: "content", Text: summarizeKiroUsage(info)})
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	return nil
+}
+
+// summarizeKiroUsage builds a short human-readable summary of a successful
+// Kiro getUsageLimits response for the test UI.
+func summarizeKiroUsage(info *UsageInfo) string {
+	if info == nil {
+		return "Kiro credentials are valid"
+	}
+	parts := []string{"Kiro credentials are valid"}
+	if info.SubscriptionTierRaw != "" {
+		parts = append(parts, "subscription: "+info.SubscriptionTierRaw)
+	}
+	if info.FiveHour != nil && info.FiveHour.LimitRequests > 0 {
+		parts = append(parts, fmt.Sprintf("usage: %d/%d", info.FiveHour.UsedRequests, info.FiveHour.LimitRequests))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // testOpenAIChatCompletionsConnection tests an OpenAI-compatible APIKey account

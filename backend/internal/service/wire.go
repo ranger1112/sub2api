@@ -602,6 +602,8 @@ var ProviderSet = wire.NewSet(
 	NewKiroOAuthService,
 	ProvideKiroTokenProvider,
 	NewKiroGatewayService,
+	NewKiroQuotaFetcher,
+	NewKiroQuotaService,
 	ProvideRateLimitService,
 	NewAccountUsageService,
 	NewAccountTestService,
