@@ -91,7 +91,9 @@ func CreatePrivacyReqClient(proxyURL string) (*req.Client, error) {
 func CreateKiroHTTPClient(proxyURL string) (*http.Client, error) {
 	rc, err := getSharedReqClient(reqClientOptions{
 		ProxyURL: proxyURL,
-		Timeout:  15 * time.Minute, // Kiro 流式响应可能持续较久
+		// 不设整体超时:Kiro 流式响应可能持续很久,由调用方 context 控制取消
+		// (token 刷新路径由其 8s ctx 兜底,不会因此挂起)。
+		Timeout: 0,
 	})
 	if err != nil {
 		return nil, err

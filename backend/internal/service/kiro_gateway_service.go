@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -63,12 +65,18 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		h.Set("Content-Type", "text/event-stream")
 		h.Set("Cache-Control", "no-cache")
 		h.Set("Connection", "keep-alive")
+		h.Set("X-Accel-Buffering", "no") // 禁止 nginx 等反代缓冲,保证实时流
 		res, streamErr := kiro.StreamMessages(ctx, client, &cred, s.cfg, &req, c.Writer)
+		if streamErr != nil {
+			// 首字节前失败(如上游非 2xx):SSE 头尚未提交,改写为带真实上游状态的 JSON 错误。
+			s.writeUpstreamError(c, streamErr)
+		}
 		return s.buildForwardResult(req.Model, res, true, start), streamErr
 	}
 
 	msg, res, err := kiro.CollectMessages(ctx, client, &cred, s.cfg, &req)
 	if err != nil {
+		s.writeUpstreamError(c, err)
 		return s.buildForwardResult(req.Model, res, false, start), err
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
@@ -76,6 +84,72 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		return s.buildForwardResult(req.Model, res, false, start), encErr
 	}
 	return s.buildForwardResult(req.Model, res, false, start), nil
+}
+
+// writeUpstreamError 在尚未写出任何响应体时,把 Kiro 上游错误改写为 Anthropic 风格的 JSON 错误,
+// 并带上真实上游状态码。若已有内容写出(流已开始),则不做处理(交由上层追加 SSE error 事件)。
+func (s *KiroGatewayService) writeUpstreamError(c *gin.Context, err error) {
+	if c.Writer.Size() > 0 {
+		return
+	}
+	status := http.StatusBadGateway
+	message := "Upstream request failed"
+	var ue *kiro.UpstreamError
+	if errors.As(err, &ue) {
+		if ue.StatusCode > 0 {
+			status = ue.StatusCode
+		}
+		if m := extractKiroErrorMessage(ue.Body); m != "" {
+			message = m
+		}
+	}
+	h := c.Writer.Header()
+	h.Set("Content-Type", "application/json")
+	h.Del("Cache-Control")
+	h.Del("Connection")
+	h.Del("X-Accel-Buffering")
+	c.Writer.WriteHeader(status)
+	_ = json.NewEncoder(c.Writer).Encode(map[string]any{
+		"type":  "error",
+		"error": map[string]any{"type": kiroErrorType(status), "message": message},
+	})
+}
+
+func extractKiroErrorMessage(body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+	var obj map[string]any
+	if json.Unmarshal([]byte(body), &obj) == nil {
+		if m, ok := obj["message"].(string); ok && m != "" {
+			return m
+		}
+		if m, ok := obj["Message"].(string); ok && m != "" {
+			return m
+		}
+	}
+	if len(body) > 500 {
+		return body[:500]
+	}
+	return body
+}
+
+func kiroErrorType(status int) string {
+	switch {
+	case status == http.StatusBadRequest:
+		return "invalid_request_error"
+	case status == http.StatusUnauthorized:
+		return "authentication_error"
+	case status == http.StatusForbidden:
+		return "permission_error"
+	case status == http.StatusNotFound:
+		return "not_found_error"
+	case status == http.StatusTooManyRequests:
+		return "rate_limit_error"
+	default:
+		return "api_error"
+	}
 }
 
 func (s *KiroGatewayService) buildForwardResult(requestedModel string, res *kiro.StreamResult, stream bool, start time.Time) *ForwardResult {

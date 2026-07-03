@@ -10114,6 +10114,13 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return err
 	}
 
+	// Kiro 账户不支持 count_tokens，返回 404 让客户端 fallback 到本地估算。
+	// 提前返回(在 OAuth 归一化之前),避免把 kiro 凭据/请求当作 Claude OAuth 处理并发往 Anthropic。
+	if account.Platform == PlatformKiro {
+		s.countTokensError(c, http.StatusNotFound, "not_found_error", "count_tokens endpoint is not supported for this platform")
+		return nil
+	}
+
 	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCodeCT
 

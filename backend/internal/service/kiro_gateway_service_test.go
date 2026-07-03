@@ -104,6 +104,39 @@ func TestKiroGatewayService_ForwardNonStream(t *testing.T) {
 	}
 }
 
+func TestKiroGatewayService_ForwardUpstreamErrorPropagatesStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rt := &kiroFakeRoundTripper{status: http.StatusTooManyRequests, body: `{"message":"rate limited","reason":"MONTHLY_REQUEST_COUNT"}`}
+	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
+	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig())
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
+
+	if _, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false); err == nil {
+		t.Fatal("expected upstream error")
+	}
+	// 真实上游状态码应被透传,且不再是 SSE content-type
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type = %q, want application/json (not text/event-stream)", ct)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("error body not JSON: %s", rec.Body.String())
+	}
+	e, _ := out["error"].(map[string]any)
+	if e["type"] != "rate_limit_error" {
+		t.Fatalf("error type = %v, want rate_limit_error", e["type"])
+	}
+	if msg, _ := e["message"].(string); !strings.Contains(msg, "rate limited") {
+		t.Fatalf("error message = %q, want to contain upstream message", msg)
+	}
+}
+
 func TestKiroGatewayService_ForwardTokenError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := newKiroGatewayServiceForTest("")
