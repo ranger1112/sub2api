@@ -200,11 +200,12 @@ func (f *KiroQuotaFetcher) TestGenerate(ctx context.Context, account *Account, p
 
 	callCtx, cancel := context.WithTimeout(ctx, kiroTestGenerateTimeout)
 	defer cancel()
+	// 与其它平台的测试连接一致:发同样的 "hi",返回模型的真实回复(而非硬编码探针)。
 	req := &kiro.AnthropicRequest{
 		Model:     model,
-		MaxTokens: 16,
+		MaxTokens: 64,
 		Messages: []kiro.AnthropicMessage{
-			{Role: "user", Content: json.RawMessage(`"Reply with the single word: OK"`)},
+			{Role: "user", Content: json.RawMessage(`"hi"`)},
 		},
 	}
 	msg, _, callErr := kiro.CollectMessages(callCtx, client, &cred, f.cfg, req)
