@@ -276,6 +276,7 @@ type AccountUsageService struct {
 	geminiQuotaService      *GeminiQuotaService
 	antigravityQuotaFetcher *AntigravityQuotaFetcher
 	grokQuotaFetcher        *GrokQuotaFetcher
+	kiroQuotaFetcher        *KiroQuotaFetcher
 	openAIQuotaService      *OpenAIQuotaService
 	cache                   *UsageCache
 	identityCache           IdentityCache
@@ -290,6 +291,7 @@ func NewAccountUsageService(
 	geminiQuotaService *GeminiQuotaService,
 	antigravityQuotaFetcher *AntigravityQuotaFetcher,
 	grokQuotaFetcher *GrokQuotaFetcher,
+	kiroQuotaFetcher *KiroQuotaFetcher,
 	openAIQuotaService *OpenAIQuotaService,
 	cache *UsageCache,
 	identityCache IdentityCache,
@@ -302,6 +304,7 @@ func NewAccountUsageService(
 		geminiQuotaService:      geminiQuotaService,
 		antigravityQuotaFetcher: antigravityQuotaFetcher,
 		grokQuotaFetcher:        grokQuotaFetcher,
+		kiroQuotaFetcher:        kiroQuotaFetcher,
 		openAIQuotaService:      openAIQuotaService,
 		cache:                   cache,
 		identityCache:           identityCache,
@@ -348,6 +351,16 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, for
 
 	if account.Platform == PlatformGrok {
 		usage, err := s.getGrokUsage(ctx, account)
+		if err == nil {
+			s.tryClearRecoverableAccountError(ctx, account)
+		}
+		return usage, err
+	}
+
+	// Kiro 平台：使用 KiroQuotaFetcher 调 getUsageLimits 获取额度/用量，
+	// 否则会把 kiro 的 access_token 发给 api.anthropic.com 的 usage 端点导致失败。
+	if account.Platform == PlatformKiro {
+		usage, err := s.getKiroUsage(ctx, account)
 		if err == nil {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
@@ -916,6 +929,35 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 
 	enrichUsageWithAccountError(usage, account)
 	return usage, nil
+}
+
+// getKiroUsage 获取 Kiro 账户额度/用量。
+// 通过 KiroQuotaFetcher 调 getUsageLimits;上游 401/403/429 已在 FetchQuota 内部
+// 降级为带 error_code 的 UsageInfo(err=nil),其余错误(网络/5xx/解析)在此降级为
+// 带 error 的 UsageInfo(而非 500),与 antigravity/grok 面板体验一致。
+func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
+	now := time.Now()
+	if s.kiroQuotaFetcher == nil {
+		return &UsageInfo{UpdatedAt: &now}, nil
+	}
+
+	proxyURL := ""
+	if account != nil && account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	result, err := s.kiroQuotaFetcher.FetchQuota(ctx, account, proxyURL)
+	if err != nil {
+		return &UsageInfo{
+			UpdatedAt: &now,
+			Error:     fmt.Sprintf("usage API error: %v", err),
+			ErrorCode: errorCodeNetworkError,
+		}, nil
+	}
+	if result == nil || result.UsageInfo == nil {
+		return &UsageInfo{UpdatedAt: &now}, nil
+	}
+	return result.UsageInfo, nil
 }
 
 // recalcAntigravityRemainingSeconds 重新计算 Antigravity UsageInfo 中各窗口的 RemainingSeconds

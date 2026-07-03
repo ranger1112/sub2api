@@ -61,6 +61,7 @@ type AccountHandler struct {
 	sessionLimitCache       service.SessionLimitCache
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
+	kiroOAuthService        *service.KiroOAuthService
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -78,6 +79,7 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
+	kiroOAuthService *service.KiroOAuthService,
 ) *AccountHandler {
 	return &AccountHandler{
 		adminService:            adminService,
@@ -93,6 +95,7 @@ func NewAccountHandler(
 		sessionLimitCache:       sessionLimitCache,
 		rpmCache:                rpmCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
+		kiroOAuthService:        kiroOAuthService,
 	}
 }
 
@@ -912,6 +915,24 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		if account.Status == service.StatusError && strings.Contains(account.ErrorMessage, "missing_project_id:") {
 			if _, clearErr := h.adminService.ClearAccountError(ctx, account.ID); clearErr != nil {
 				return nil, "", fmt.Errorf("failed to clear account error: %w", clearErr)
+			}
+		}
+	} else if account.IsKiro() {
+		// Kiro OAuth 账号:走 Kiro social/idc 令牌刷新端点(而非 Claude OAuth),
+		// 否则会用 kiro 的 refresh_token 打 Anthropic 端点导致失败。
+		if h.kiroOAuthService == nil {
+			return nil, "", infraerrors.BadRequest("KIRO_OAUTH_NOT_CONFIGURED", "kiro oauth service is not configured")
+		}
+		kiroCredentials, err := h.kiroOAuthService.RefreshAccountCredentials(ctx, account)
+		if err != nil {
+			return nil, "", err
+		}
+
+		// 保留刷新未覆盖的非 token 字段(参照 antigravity 分支写法)。
+		newCredentials = kiroCredentials
+		for k, v := range account.Credentials {
+			if _, exists := newCredentials[k]; !exists {
+				newCredentials[k] = v
 			}
 		}
 	} else {
@@ -2186,7 +2207,7 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 }
 
 // kiroModelsFromIDs 把 Kiro 模型 ID 列表构造成前端可用的 claude.Model 条目
-//(Kiro 是 Anthropic 协议,复用 claude.Model 形状)。
+// (Kiro 是 Anthropic 协议,复用 claude.Model 形状)。
 func kiroModelsFromIDs(ids []string) []claude.Model {
 	models := make([]claude.Model, 0, len(ids))
 	for _, id := range ids {
