@@ -91,8 +91,12 @@ const isSearchable = computed(() => {
 const filteredGroups = computed(() => {
   let result: AdminGroup[] = props.groups
   if (props.platform) {
-    // antigravity 账户启用混合调度后，可选择 anthropic/gemini 分组
-    if (props.platform === 'antigravity' && props.mixedScheduling) {
+    if (props.platform === 'kiro') {
+      // Kiro 是 Anthropic 协议上游，账号挂在 anthropic 分组下（按账号分流到 KiroGatewayService），
+      // 故分组选择显示 anthropic 分组（与后端混合调度一致）。
+      result = result.filter((g) => g.platform === 'anthropic')
+    } else if (props.platform === 'antigravity' && props.mixedScheduling) {
+      // antigravity 账户启用混合调度后，可选择 anthropic/gemini 分组
       result = result.filter(
         (g) => g.platform === 'antigravity' || g.platform === 'anthropic' || g.platform === 'gemini'
       )
