@@ -173,7 +173,9 @@ func TestKiroGatewayService_ForwardRetryableUpstreamErrorFailsOver(t *testing.T)
 	}
 	// ops 遥测:记录了一条 failover 事件,携带真实上游状态码。
 	assertKiroOpsEvent(t, c, http.StatusTooManyRequests, "failover")
-	if v, ok := c.Get(OpsUpstreamStatusCodeKey); !ok || v.(int) != http.StatusTooManyRequests {
+	v, ok := c.Get(OpsUpstreamStatusCodeKey)
+	vi, _ := v.(int)
+	if !ok || vi != http.StatusTooManyRequests {
 		t.Fatalf("ops upstream status = %v (ok=%v), want 429", v, ok)
 	}
 }

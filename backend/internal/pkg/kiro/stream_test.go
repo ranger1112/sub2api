@@ -36,7 +36,7 @@ func collectTextDeltas(events []SSEEvent) string {
 	for _, e := range filterEvents(events, "content_block_delta") {
 		if deltaField(e, "type") == "text_delta" {
 			if s, ok := deltaField(e, "text").(string); ok {
-				sb.WriteString(s)
+				_, _ = sb.WriteString(s)
 			}
 		}
 	}
@@ -48,7 +48,7 @@ func collectThinkingDeltas(events []SSEEvent) string {
 	for _, e := range filterEvents(events, "content_block_delta") {
 		if deltaField(e, "type") == "thinking_delta" {
 			if s, ok := deltaField(e, "thinking").(string); ok {
-				sb.WriteString(s)
+				_, _ = sb.WriteString(s)
 			}
 		}
 	}
@@ -75,7 +75,9 @@ func TestStreamContext_SimpleText(t *testing.T) {
 	if _, ok := firstEvent(initial, "message_start"); !ok {
 		t.Fatal("missing message_start")
 	}
-	if start, ok := firstEvent(initial, "content_block_start"); !ok || start.Data["content_block"].(map[string]any)["type"] != "text" {
+	start, ok := firstEvent(initial, "content_block_start")
+	startCB, _ := start.Data["content_block"].(map[string]any)
+	if !ok || startCB["type"] != "text" {
 		t.Fatalf("missing initial text block: %+v", initial)
 	}
 
@@ -89,7 +91,8 @@ func TestStreamContext_SimpleText(t *testing.T) {
 	if !ok {
 		t.Fatal("missing message_delta")
 	}
-	if got := md.Data["delta"].(map[string]any)["stop_reason"]; got != "end_turn" {
+	mdDelta, _ := md.Data["delta"].(map[string]any)
+	if got := mdDelta["stop_reason"]; got != "end_turn" {
 		t.Fatalf("stop_reason = %v, want end_turn", got)
 	}
 	if _, ok := firstEvent(final, "message_stop"); !ok {
@@ -117,7 +120,7 @@ func TestStreamContext_ToolUseClosesTextAndRestores(t *testing.T) {
 	if !ok {
 		t.Fatal("missing tool_use content_block_start")
 	}
-	cb := start.Data["content_block"].(map[string]any)
+	cb, _ := start.Data["content_block"].(map[string]any)
 	if cb["type"] != "tool_use" || cb["name"] != "mcp__original__tool" {
 		t.Fatalf("tool_use name not restored: %+v", cb)
 	}
@@ -134,8 +137,9 @@ func TestStreamContext_ToolUseClosesTextAndRestores(t *testing.T) {
 
 	final := c.GenerateFinalEvents()
 	md, _ := firstEvent(final, "message_delta")
-	if md.Data["delta"].(map[string]any)["stop_reason"] != "tool_use" {
-		t.Fatalf("stop_reason = %v, want tool_use", md.Data["delta"].(map[string]any)["stop_reason"])
+	delta, _ := md.Data["delta"].(map[string]any)
+	if delta["stop_reason"] != "tool_use" {
+		t.Fatalf("stop_reason = %v, want tool_use", delta["stop_reason"])
 	}
 }
 
@@ -158,7 +162,8 @@ func TestStreamContext_TextAfterToolUseRestartsBlock(t *testing.T) {
 
 	textEvents := c.ProcessKiroEvent(Event{Kind: EventAssistantResponse, Content: "hello"})
 	start, ok := firstEvent(textEvents, "content_block_start")
-	if !ok || start.Data["content_block"].(map[string]any)["type"] != "text" {
+	cb, _ := start.Data["content_block"].(map[string]any)
+	if !ok || cb["type"] != "text" {
 		t.Fatalf("should restart a new text block: %+v", textEvents)
 	}
 	if idxToInt(start.Data["index"]) == initialIdx {
@@ -178,7 +183,7 @@ func TestStreamContext_ContextUsageSetsInputTokens(t *testing.T) {
 	c.ProcessKiroEvent(Event{Kind: EventContextUsage, ContextUsagePercentage: 10.0}) // 10% of 200000 = 20000
 	final := c.GenerateFinalEvents()
 	md, _ := firstEvent(final, "message_delta")
-	usage := md.Data["usage"].(map[string]any)
+	usage, _ := md.Data["usage"].(map[string]any)
 	if usage["input_tokens"] != 20000 {
 		t.Fatalf("input_tokens = %v, want 20000", usage["input_tokens"])
 	}
@@ -191,8 +196,9 @@ func TestStreamContext_ContextWindowExceeded(t *testing.T) {
 	c.ProcessKiroEvent(Event{Kind: EventContextUsage, ContextUsagePercentage: 100.0})
 	final := c.GenerateFinalEvents()
 	md, _ := firstEvent(final, "message_delta")
-	if md.Data["delta"].(map[string]any)["stop_reason"] != "model_context_window_exceeded" {
-		t.Fatalf("stop_reason = %v", md.Data["delta"].(map[string]any)["stop_reason"])
+	delta, _ := md.Data["delta"].(map[string]any)
+	if delta["stop_reason"] != "model_context_window_exceeded" {
+		t.Fatalf("stop_reason = %v", delta["stop_reason"])
 	}
 }
 
@@ -209,7 +215,8 @@ func TestBufferedStreamContext_BackfillsInputTokens(t *testing.T) {
 	if !ok {
 		t.Fatal("missing message_start")
 	}
-	usage := ms.Data["message"].(map[string]any)["usage"].(map[string]any)
+	msMessage, _ := ms.Data["message"].(map[string]any)
+	usage, _ := msMessage["usage"].(map[string]any)
 	if usage["input_tokens"] != 10000 {
 		t.Fatalf("backfilled input_tokens = %v, want 10000", usage["input_tokens"])
 	}
@@ -236,7 +243,7 @@ func TestStreamContext_ThinkingSplitsThinkingAndText(t *testing.T) {
 	// thinking 块应在文本块之前(索引更小)
 	var thinkingStartIdx, textStartIdx = -1, -1
 	for _, e := range filterEvents(events, "content_block_start") {
-		cb := e.Data["content_block"].(map[string]any)
+		cb, _ := e.Data["content_block"].(map[string]any)
 		switch cb["type"] {
 		case "thinking":
 			thinkingStartIdx = idxToInt(e.Data["index"])
@@ -250,8 +257,9 @@ func TestStreamContext_ThinkingSplitsThinkingAndText(t *testing.T) {
 
 	final := c.GenerateFinalEvents()
 	md, _ := firstEvent(final, "message_delta")
-	if md.Data["delta"].(map[string]any)["stop_reason"] != "end_turn" {
-		t.Fatalf("stop_reason = %v, want end_turn", md.Data["delta"].(map[string]any)["stop_reason"])
+	delta, _ := md.Data["delta"].(map[string]any)
+	if delta["stop_reason"] != "end_turn" {
+		t.Fatalf("stop_reason = %v, want end_turn", delta["stop_reason"])
 	}
 }
 
@@ -304,7 +312,8 @@ func TestStreamContext_CacheUsageInjection(t *testing.T) {
 	if !ok {
 		t.Fatal("missing message_start")
 	}
-	msUsage := ms.Data["message"].(map[string]any)["usage"].(map[string]any)
+	msMessage, _ := ms.Data["message"].(map[string]any)
+	msUsage, _ := msMessage["usage"].(map[string]any)
 	// message_start 用估算 total(25000)扣缓存:25000 - 12000 - 3000 = 10000。
 	if msUsage["input_tokens"] != 10000 {
 		t.Fatalf("message_start input_tokens = %v, want 10000", msUsage["input_tokens"])
@@ -322,7 +331,7 @@ func TestStreamContext_CacheUsageInjection(t *testing.T) {
 
 	final := c.GenerateFinalEvents()
 	md, _ := firstEvent(final, "message_delta")
-	mdUsage := md.Data["usage"].(map[string]any)
+	mdUsage, _ := md.Data["usage"].(map[string]any)
 	// message_delta 用 contextUsage 真值(20000)扣缓存:20000 - 12000 - 3000 = 5000。
 	if mdUsage["input_tokens"] != 5000 {
 		t.Fatalf("message_delta input_tokens = %v, want 5000", mdUsage["input_tokens"])
@@ -337,7 +346,8 @@ func TestStreamContext_NoCacheNoFields(t *testing.T) {
 	c := NewStreamContext("claude-sonnet-4-5", 100, false, nil)
 	initial := c.GenerateInitialEvents()
 	ms, _ := firstEvent(initial, "message_start")
-	msUsage := ms.Data["message"].(map[string]any)["usage"].(map[string]any)
+	msMessage, _ := ms.Data["message"].(map[string]any)
+	msUsage, _ := msMessage["usage"].(map[string]any)
 	// 未 SetCache:input_tokens 保持原值,不出现任何缓存字段(向后兼容)。
 	if msUsage["input_tokens"] != 100 {
 		t.Fatalf("input_tokens = %v, want 100", msUsage["input_tokens"])
@@ -362,7 +372,7 @@ func TestAssembleMessage_CarriesCache(t *testing.T) {
 	events = append(events, c.GenerateFinalEvents()...)
 
 	msg := AssembleMessage(events)
-	usage := msg["usage"].(map[string]any)
+	usage, _ := msg["usage"].(map[string]any)
 	if usage["cache_read_input_tokens"] != 12000 {
 		t.Fatalf("assembled usage 缺 cache_read: %+v", usage)
 	}
@@ -384,10 +394,10 @@ func TestStreamContext_CacheCappedToContextTotal(t *testing.T) {
 
 	final := c.GenerateFinalEvents()
 	md, _ := firstEvent(final, "message_delta")
-	u := md.Data["usage"].(map[string]any)
-	input := u["input_tokens"].(int)
-	read := u["cache_read_input_tokens"].(int)
-	creation := u["cache_creation_input_tokens"].(int)
+	u, _ := md.Data["usage"].(map[string]any)
+	input, _ := u["input_tokens"].(int)
+	read, _ := u["cache_read_input_tokens"].(int)
+	creation, _ := u["cache_creation_input_tokens"].(int)
 	if input < 0 {
 		t.Fatalf("input 不应为负: %d", input)
 	}
@@ -411,14 +421,14 @@ func TestStreamContext_CreditUsageInResponse(t *testing.T) {
 
 	// 流式:credit 透传进 message_delta.usage。
 	md, _ := firstEvent(events, "message_delta")
-	mdUsage := md.Data["usage"].(map[string]any)
+	mdUsage, _ := md.Data["usage"].(map[string]any)
 	if mdUsage["credit_usage"] != 0.34 || mdUsage["credit_unit"] != "credit" {
 		t.Fatalf("message_delta credit fields = %+v", mdUsage)
 	}
 
 	// 非流式:AssembleMessage 继承 credit。
 	msg := AssembleMessage(events)
-	au := msg["usage"].(map[string]any)
+	au, _ := msg["usage"].(map[string]any)
 	if au["credit_usage"] != 0.34 || au["credit_unit"] != "credit" {
 		t.Fatalf("assembled credit fields = %+v", au)
 	}

@@ -55,7 +55,7 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 				}
 			case "input_json_delta":
 				if s, ok := d["partial_json"].(string); ok {
-					b.toolInput.WriteString(s)
+					_, _ = b.toolInput.WriteString(s)
 				}
 			}
 		case "content_block_stop":

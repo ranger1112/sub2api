@@ -57,9 +57,9 @@ func TestStreamMessages_EndToEnd(t *testing.T) {
 		gotBody, _ = readAllBody(r)
 		w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
 		// 一段典型的 Kiro 事件流:两段文本 + 上下文使用率
-		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"Hello "}`))
-		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"world"}`))
-		w.Write(kiroEventFrame("contextUsageEvent", `{"contextUsagePercentage":5.0}`)) // 5% of 200000 = 10000
+		_, _ = w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"Hello "}`))
+		_, _ = w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"world"}`))
+		_, _ = w.Write(kiroEventFrame("contextUsageEvent", `{"contextUsagePercentage":5.0}`)) // 5% of 200000 = 10000
 	}))
 	defer srv.Close()
 
@@ -124,10 +124,10 @@ func TestStreamMessages_EndToEnd(t *testing.T) {
 func TestCollectMessages_EndToEnd(t *testing.T) {
 	withFixedUUID(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"Hello "}`))
-		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"world"}`))
-		w.Write(kiroEventFrame("toolUseEvent", `{"name":"read_file","toolUseId":"tu_1","input":"{\"path\":\"/x\"}","stop":true}`))
-		w.Write(kiroEventFrame("contextUsageEvent", `{"contextUsagePercentage":5.0}`))
+		_, _ = w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"Hello "}`))
+		_, _ = w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"world"}`))
+		_, _ = w.Write(kiroEventFrame("toolUseEvent", `{"name":"read_file","toolUseId":"tu_1","input":"{\"path\":\"/x\"}","stop":true}`))
+		_, _ = w.Write(kiroEventFrame("contextUsageEvent", `{"contextUsagePercentage":5.0}`))
 	}))
 	defer srv.Close()
 
@@ -193,7 +193,7 @@ func TestStreamMessages_UpstreamError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "17")
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"reason":"MONTHLY_REQUEST_COUNT"}`))
+		_, _ = w.Write([]byte(`{"reason":"MONTHLY_REQUEST_COUNT"}`))
 	}))
 	defer srv.Close()
 
@@ -222,9 +222,9 @@ func TestStreamMessages_TruncatedStreamErrors(t *testing.T) {
 	withFixedUUID(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 一个完整帧 + 一个残缺帧(仅前 8 字节,不足 prelude),然后关闭 → 截断
-		w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"partial"}`))
+		_, _ = w.Write(kiroEventFrame("assistantResponseEvent", `{"content":"partial"}`))
 		full := kiroEventFrame("assistantResponseEvent", `{"content":"never arrives"}`)
-		w.Write(full[:8])
+		_, _ = w.Write(full[:8])
 	}))
 	defer srv.Close()
 
@@ -260,7 +260,7 @@ func TestStreamMessages_UnsupportedModel(t *testing.T) {
 }
 
 func readAllBody(r *http.Request) ([]byte, error) {
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	buf := make([]byte, 0, 1024)
 	tmp := make([]byte, 512)
 	for {

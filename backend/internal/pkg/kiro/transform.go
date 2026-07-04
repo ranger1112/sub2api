@@ -482,7 +482,7 @@ func convertAssistantMessage(msg AnthropicMessage, toolNameMap map[string]string
 
 	var s string
 	if json.Unmarshal(msg.Content, &s) == nil {
-		textContent.WriteString(s)
+		_, _ = textContent.WriteString(s)
 	} else {
 		var arr []json.RawMessage
 		if json.Unmarshal(msg.Content, &arr) == nil {
@@ -494,11 +494,11 @@ func convertAssistantMessage(msg AnthropicMessage, toolNameMap map[string]string
 				switch block.Type {
 				case "thinking":
 					if block.Thinking != nil {
-						thinkingContent.WriteString(*block.Thinking)
+						_, _ = thinkingContent.WriteString(*block.Thinking)
 					}
 				case "text":
 					if block.Text != nil {
-						textContent.WriteString(*block.Text)
+						_, _ = textContent.WriteString(*block.Text)
 					}
 				case "tool_use":
 					if block.ID != nil && block.Name != nil {

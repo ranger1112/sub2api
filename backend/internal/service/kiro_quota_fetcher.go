@@ -239,7 +239,7 @@ func kiroExtractText(msg map[string]any) string {
 		}
 		if m["type"] == "text" {
 			if t, ok := m["text"].(string); ok {
-				b.WriteString(t)
+				_, _ = b.WriteString(t)
 			}
 		}
 	}

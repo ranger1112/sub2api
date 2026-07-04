@@ -583,13 +583,9 @@ func toolText(raw json.RawMessage) string {
 	if json.Unmarshal(raw, &tool) != nil {
 		return ""
 	}
-	var sb strings.Builder
-	sb.WriteString(tool.Name)
-	sb.WriteByte('\n')
-	sb.WriteString(tool.Description)
+	s := tool.Name + "\n" + tool.Description
 	if len(tool.InputSchema) > 0 {
-		sb.WriteByte('\n')
-		sb.Write(tool.InputSchema)
+		s += "\n" + string(tool.InputSchema)
 	}
-	return sb.String()
+	return s
 }

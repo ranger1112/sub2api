@@ -140,7 +140,7 @@ func doRefresh(client *http.Client, req *http.Request, cred *Credentials, kind s
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxRefreshBodySize))
 	if err != nil {
 		return nil, fmt.Errorf("kiro: %s refresh: read response: %w", kind, err)
