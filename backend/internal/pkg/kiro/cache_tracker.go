@@ -161,10 +161,22 @@ func NewCacheTracker() *CacheTracker {
 // cache_control 断点,因为 kiro 内部类型不保留该字段);totalInputTokens 是本次
 // prompt 的真实/估算 total(cache_read/creation 会 cap 到它以内)。
 func (t *CacheTracker) BuildProfile(req *AnthropicRequest, rawBody []byte, totalInputTokens int) *CacheProfile {
-	if totalInputTokens <= 0 {
-		totalInputTokens = estimateInputTokens(req)
-	}
 	segments := flattenCacheSegments(rawBody)
+
+	// 未提供真值时的兜底估算:用段链自身的 token 之和,而非 estimateInputTokens。
+	// estimateInputTokens 只数 message 里的 "text" 块(processMessageContent 忽略
+	// tool_use / tool_result / thinking),对 coding-agent 历史(大量工具结果/调用)
+	// 会严重低估 → 把 Compute 里 min(前缀累计, total) 的上限压到只剩静态前缀,
+	// 使历史命中被错报为全新 input(cache_read 被钉死)。段链的 tokens(blockText/
+	// toolText 覆盖工具内容)与断点累计同源,自洽且不低估。真值仍由 CapTo 最终夹取。
+	if totalInputTokens <= 0 {
+		for i := range segments {
+			totalInputTokens += segments[i].tokens
+		}
+		if totalInputTokens <= 0 {
+			totalInputTokens = estimateInputTokens(req)
+		}
+	}
 
 	prelude := cachePrelude(req)
 	prev := sha256.Sum256(prelude)
