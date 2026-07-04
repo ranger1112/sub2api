@@ -68,6 +68,8 @@ const (
 	FieldRateMultiplier = "rate_multiplier"
 	// FieldAccountRateMultiplier holds the string denoting the account_rate_multiplier field in the database.
 	FieldAccountRateMultiplier = "account_rate_multiplier"
+	// FieldKiroCreditUsage holds the string denoting the kiro_credit_usage field in the database.
+	FieldKiroCreditUsage = "kiro_credit_usage"
 	// FieldBillingType holds the string denoting the billing_type field in the database.
 	FieldBillingType = "billing_type"
 	// FieldStream holds the string denoting the stream field in the database.
@@ -175,6 +177,7 @@ var Columns = []string{
 	FieldActualCost,
 	FieldRateMultiplier,
 	FieldAccountRateMultiplier,
+	FieldKiroCreditUsage,
 	FieldBillingType,
 	FieldStream,
 	FieldDurationMs,
@@ -242,6 +245,8 @@ var (
 	DefaultActualCost float64
 	// DefaultRateMultiplier holds the default value on creation for the "rate_multiplier" field.
 	DefaultRateMultiplier float64
+	// DefaultKiroCreditUsage holds the default value on creation for the "kiro_credit_usage" field.
+	DefaultKiroCreditUsage float64
 	// DefaultBillingType holds the default value on creation for the "billing_type" field.
 	DefaultBillingType int8
 	// DefaultStream holds the default value on creation for the "stream" field.
@@ -407,6 +412,11 @@ func ByRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 // ByAccountRateMultiplier orders the results by the account_rate_multiplier field.
 func ByAccountRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAccountRateMultiplier, opts...).ToFunc()
+}
+
+// ByKiroCreditUsage orders the results by the kiro_credit_usage field.
+func ByKiroCreditUsage(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKiroCreditUsage, opts...).ToFunc()
 }
 
 // ByBillingType orders the results by the billing_type field.

@@ -569,6 +569,27 @@ func (_u *UsageLogUpdate) ClearAccountRateMultiplier() *UsageLogUpdate {
 	return _u
 }
 
+// SetKiroCreditUsage sets the "kiro_credit_usage" field.
+func (_u *UsageLogUpdate) SetKiroCreditUsage(v float64) *UsageLogUpdate {
+	_u.mutation.ResetKiroCreditUsage()
+	_u.mutation.SetKiroCreditUsage(v)
+	return _u
+}
+
+// SetNillableKiroCreditUsage sets the "kiro_credit_usage" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableKiroCreditUsage(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetKiroCreditUsage(*v)
+	}
+	return _u
+}
+
+// AddKiroCreditUsage adds value to the "kiro_credit_usage" field.
+func (_u *UsageLogUpdate) AddKiroCreditUsage(v float64) *UsageLogUpdate {
+	_u.mutation.AddKiroCreditUsage(v)
+	return _u
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_u *UsageLogUpdate) SetBillingType(v int8) *UsageLogUpdate {
 	_u.mutation.ResetBillingType()
@@ -1134,6 +1155,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.KiroCreditUsage(); ok {
+		_spec.SetField(usagelog.FieldKiroCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedKiroCreditUsage(); ok {
+		_spec.AddField(usagelog.FieldKiroCreditUsage, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -1915,6 +1942,27 @@ func (_u *UsageLogUpdateOne) ClearAccountRateMultiplier() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetKiroCreditUsage sets the "kiro_credit_usage" field.
+func (_u *UsageLogUpdateOne) SetKiroCreditUsage(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetKiroCreditUsage()
+	_u.mutation.SetKiroCreditUsage(v)
+	return _u
+}
+
+// SetNillableKiroCreditUsage sets the "kiro_credit_usage" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableKiroCreditUsage(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetKiroCreditUsage(*v)
+	}
+	return _u
+}
+
+// AddKiroCreditUsage adds value to the "kiro_credit_usage" field.
+func (_u *UsageLogUpdateOne) AddKiroCreditUsage(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddKiroCreditUsage(v)
+	return _u
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_u *UsageLogUpdateOne) SetBillingType(v int8) *UsageLogUpdateOne {
 	_u.mutation.ResetBillingType()
@@ -2510,6 +2558,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.AccountRateMultiplierCleared() {
 		_spec.ClearField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.KiroCreditUsage(); ok {
+		_spec.SetField(usagelog.FieldKiroCreditUsage, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedKiroCreditUsage(); ok {
+		_spec.AddField(usagelog.FieldKiroCreditUsage, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)

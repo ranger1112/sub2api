@@ -365,6 +365,20 @@ func (_c *UsageLogCreate) SetNillableAccountRateMultiplier(v *float64) *UsageLog
 	return _c
 }
 
+// SetKiroCreditUsage sets the "kiro_credit_usage" field.
+func (_c *UsageLogCreate) SetKiroCreditUsage(v float64) *UsageLogCreate {
+	_c.mutation.SetKiroCreditUsage(v)
+	return _c
+}
+
+// SetNillableKiroCreditUsage sets the "kiro_credit_usage" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableKiroCreditUsage(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetKiroCreditUsage(*v)
+	}
+	return _c
+}
+
 // SetBillingType sets the "billing_type" field.
 func (_c *UsageLogCreate) SetBillingType(v int8) *UsageLogCreate {
 	_c.mutation.SetBillingType(v)
@@ -665,6 +679,10 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultRateMultiplier
 		_c.mutation.SetRateMultiplier(v)
 	}
+	if _, ok := _c.mutation.KiroCreditUsage(); !ok {
+		v := usagelog.DefaultKiroCreditUsage
+		_c.mutation.SetKiroCreditUsage(v)
+	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		v := usagelog.DefaultBillingType
 		_c.mutation.SetBillingType(v)
@@ -777,6 +795,9 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "UsageLog.rate_multiplier"`)}
+	}
+	if _, ok := _c.mutation.KiroCreditUsage(); !ok {
+		return &ValidationError{Name: "kiro_credit_usage", err: errors.New(`ent: missing required field "UsageLog.kiro_credit_usage"`)}
 	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
@@ -946,6 +967,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AccountRateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldAccountRateMultiplier, field.TypeFloat64, value)
 		_node.AccountRateMultiplier = &value
+	}
+	if value, ok := _c.mutation.KiroCreditUsage(); ok {
+		_spec.SetField(usagelog.FieldKiroCreditUsage, field.TypeFloat64, value)
+		_node.KiroCreditUsage = value
 	}
 	if value, ok := _c.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
@@ -1605,6 +1630,24 @@ func (u *UsageLogUpsert) AddAccountRateMultiplier(v float64) *UsageLogUpsert {
 // ClearAccountRateMultiplier clears the value of the "account_rate_multiplier" field.
 func (u *UsageLogUpsert) ClearAccountRateMultiplier() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldAccountRateMultiplier)
+	return u
+}
+
+// SetKiroCreditUsage sets the "kiro_credit_usage" field.
+func (u *UsageLogUpsert) SetKiroCreditUsage(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldKiroCreditUsage, v)
+	return u
+}
+
+// UpdateKiroCreditUsage sets the "kiro_credit_usage" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateKiroCreditUsage() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldKiroCreditUsage)
+	return u
+}
+
+// AddKiroCreditUsage adds v to the "kiro_credit_usage" field.
+func (u *UsageLogUpsert) AddKiroCreditUsage(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldKiroCreditUsage, v)
 	return u
 }
 
@@ -2430,6 +2473,27 @@ func (u *UsageLogUpsertOne) UpdateAccountRateMultiplier() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearAccountRateMultiplier() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetKiroCreditUsage sets the "kiro_credit_usage" field.
+func (u *UsageLogUpsertOne) SetKiroCreditUsage(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetKiroCreditUsage(v)
+	})
+}
+
+// AddKiroCreditUsage adds v to the "kiro_credit_usage" field.
+func (u *UsageLogUpsertOne) AddKiroCreditUsage(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddKiroCreditUsage(v)
+	})
+}
+
+// UpdateKiroCreditUsage sets the "kiro_credit_usage" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateKiroCreditUsage() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateKiroCreditUsage()
 	})
 }
 
@@ -3460,6 +3524,27 @@ func (u *UsageLogUpsertBulk) UpdateAccountRateMultiplier() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearAccountRateMultiplier() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearAccountRateMultiplier()
+	})
+}
+
+// SetKiroCreditUsage sets the "kiro_credit_usage" field.
+func (u *UsageLogUpsertBulk) SetKiroCreditUsage(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetKiroCreditUsage(v)
+	})
+}
+
+// AddKiroCreditUsage adds v to the "kiro_credit_usage" field.
+func (u *UsageLogUpsertBulk) AddKiroCreditUsage(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddKiroCreditUsage(v)
+	})
+}
+
+// UpdateKiroCreditUsage sets the "kiro_credit_usage" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateKiroCreditUsage() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateKiroCreditUsage()
 	})
 }
 

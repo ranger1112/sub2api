@@ -107,6 +107,12 @@ func (UsageLog) Fields() []ent.Field {
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}),
 
+		// kiro_credit_usage: Kiro 账号本次请求消耗的 credit（meteringEvent.usage 累计）。
+		// Kiro 唯一的真实成本口径;非 Kiro 账号恒为 0。仅作观测/对账展示,不参与 token 计费。
+		field.Float("kiro_credit_usage").
+			Default(0).
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
+
 		// 其他字段
 		field.Int8("billing_type").
 			Default(0),

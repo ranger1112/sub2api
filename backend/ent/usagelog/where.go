@@ -190,6 +190,11 @@ func AccountRateMultiplier(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldAccountRateMultiplier, v))
 }
 
+// KiroCreditUsage applies equality check predicate on the "kiro_credit_usage" field. It's identical to KiroCreditUsageEQ.
+func KiroCreditUsage(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldKiroCreditUsage, v))
+}
+
 // BillingType applies equality check predicate on the "billing_type" field. It's identical to BillingTypeEQ.
 func BillingType(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingType, v))
@@ -1498,6 +1503,46 @@ func AccountRateMultiplierIsNil() predicate.UsageLog {
 // AccountRateMultiplierNotNil applies the NotNil predicate on the "account_rate_multiplier" field.
 func AccountRateMultiplierNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldAccountRateMultiplier))
+}
+
+// KiroCreditUsageEQ applies the EQ predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldKiroCreditUsage, v))
+}
+
+// KiroCreditUsageNEQ applies the NEQ predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldKiroCreditUsage, v))
+}
+
+// KiroCreditUsageIn applies the In predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldKiroCreditUsage, vs...))
+}
+
+// KiroCreditUsageNotIn applies the NotIn predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldKiroCreditUsage, vs...))
+}
+
+// KiroCreditUsageGT applies the GT predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldKiroCreditUsage, v))
+}
+
+// KiroCreditUsageGTE applies the GTE predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldKiroCreditUsage, v))
+}
+
+// KiroCreditUsageLT applies the LT predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldKiroCreditUsage, v))
+}
+
+// KiroCreditUsageLTE applies the LTE predicate on the "kiro_credit_usage" field.
+func KiroCreditUsageLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldKiroCreditUsage, v))
 }
 
 // BillingTypeEQ applies the EQ predicate on the "billing_type" field.

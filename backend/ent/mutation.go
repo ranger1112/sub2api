@@ -35530,6 +35530,8 @@ type UsageLogMutation struct {
 	addrate_multiplier          *float64
 	account_rate_multiplier     *float64
 	addaccount_rate_multiplier  *float64
+	kiro_credit_usage           *float64
+	addkiro_credit_usage        *float64
 	billing_type                *int8
 	addbilling_type             *int8
 	stream                      *bool
@@ -37053,6 +37055,62 @@ func (m *UsageLogMutation) ResetAccountRateMultiplier() {
 	delete(m.clearedFields, usagelog.FieldAccountRateMultiplier)
 }
 
+// SetKiroCreditUsage sets the "kiro_credit_usage" field.
+func (m *UsageLogMutation) SetKiroCreditUsage(f float64) {
+	m.kiro_credit_usage = &f
+	m.addkiro_credit_usage = nil
+}
+
+// KiroCreditUsage returns the value of the "kiro_credit_usage" field in the mutation.
+func (m *UsageLogMutation) KiroCreditUsage() (r float64, exists bool) {
+	v := m.kiro_credit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKiroCreditUsage returns the old "kiro_credit_usage" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldKiroCreditUsage(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKiroCreditUsage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKiroCreditUsage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKiroCreditUsage: %w", err)
+	}
+	return oldValue.KiroCreditUsage, nil
+}
+
+// AddKiroCreditUsage adds f to the "kiro_credit_usage" field.
+func (m *UsageLogMutation) AddKiroCreditUsage(f float64) {
+	if m.addkiro_credit_usage != nil {
+		*m.addkiro_credit_usage += f
+	} else {
+		m.addkiro_credit_usage = &f
+	}
+}
+
+// AddedKiroCreditUsage returns the value that was added to the "kiro_credit_usage" field in this mutation.
+func (m *UsageLogMutation) AddedKiroCreditUsage() (r float64, exists bool) {
+	v := m.addkiro_credit_usage
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetKiroCreditUsage resets all changes to the "kiro_credit_usage" field.
+func (m *UsageLogMutation) ResetKiroCreditUsage() {
+	m.kiro_credit_usage = nil
+	m.addkiro_credit_usage = nil
+}
+
 // SetBillingType sets the "billing_type" field.
 func (m *UsageLogMutation) SetBillingType(i int8) {
 	m.billing_type = &i
@@ -37925,7 +37983,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 41)
+	fields := make([]string, 0, 42)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -38006,6 +38064,9 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.account_rate_multiplier != nil {
 		fields = append(fields, usagelog.FieldAccountRateMultiplier)
+	}
+	if m.kiro_credit_usage != nil {
+		fields = append(fields, usagelog.FieldKiroCreditUsage)
 	}
 	if m.billing_type != nil {
 		fields = append(fields, usagelog.FieldBillingType)
@@ -38111,6 +38172,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.RateMultiplier()
 	case usagelog.FieldAccountRateMultiplier:
 		return m.AccountRateMultiplier()
+	case usagelog.FieldKiroCreditUsage:
+		return m.KiroCreditUsage()
 	case usagelog.FieldBillingType:
 		return m.BillingType()
 	case usagelog.FieldStream:
@@ -38202,6 +38265,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldRateMultiplier(ctx)
 	case usagelog.FieldAccountRateMultiplier:
 		return m.OldAccountRateMultiplier(ctx)
+	case usagelog.FieldKiroCreditUsage:
+		return m.OldKiroCreditUsage(ctx)
 	case usagelog.FieldBillingType:
 		return m.OldBillingType(ctx)
 	case usagelog.FieldStream:
@@ -38428,6 +38493,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAccountRateMultiplier(v)
 		return nil
+	case usagelog.FieldKiroCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKiroCreditUsage(v)
+		return nil
 	case usagelog.FieldBillingType:
 		v, ok := value.(int8)
 		if !ok {
@@ -38579,6 +38651,9 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addaccount_rate_multiplier != nil {
 		fields = append(fields, usagelog.FieldAccountRateMultiplier)
 	}
+	if m.addkiro_credit_usage != nil {
+		fields = append(fields, usagelog.FieldKiroCreditUsage)
+	}
 	if m.addbilling_type != nil {
 		fields = append(fields, usagelog.FieldBillingType)
 	}
@@ -38629,6 +38704,8 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRateMultiplier()
 	case usagelog.FieldAccountRateMultiplier:
 		return m.AddedAccountRateMultiplier()
+	case usagelog.FieldKiroCreditUsage:
+		return m.AddedKiroCreditUsage()
 	case usagelog.FieldBillingType:
 		return m.AddedBillingType()
 	case usagelog.FieldDurationMs:
@@ -38750,6 +38827,13 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddAccountRateMultiplier(v)
+		return nil
+	case usagelog.FieldKiroCreditUsage:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddKiroCreditUsage(v)
 		return nil
 	case usagelog.FieldBillingType:
 		v, ok := value.(int8)
@@ -38997,6 +39081,9 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldAccountRateMultiplier:
 		m.ResetAccountRateMultiplier()
+		return nil
+	case usagelog.FieldKiroCreditUsage:
+		m.ResetKiroCreditUsage()
 		return nil
 	case usagelog.FieldBillingType:
 		m.ResetBillingType()
