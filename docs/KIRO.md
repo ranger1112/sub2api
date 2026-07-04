@@ -170,15 +170,17 @@ Kiro 走账号绑定的代理:`KiroHTTPClientFactory` = `repository.CreateKiroHT
 
 > 该服务已在 wire 中注册,但**尚未接入 admin 路由/handler**(为后续配额展示端点预留)。接入时新增一个 admin handler 调用 `KiroQuotaService.FetchUsage` 即可。
 
-### 计量与用量:token 为估算,credit 为真实
+### 计量与用量:token 为估算,cache 为合成,credit 为真实
 
-**Kiro 上游不提供真实的 token / 提示词缓存账目**(经官方 `amzn-qdeveloper-streaming` 的 `MeteringEvent` 结构及多个开源实现交叉确认):
+**Kiro 上游不提供真实的 token / 提示词缓存账目**(经官方 `amzn-qdeveloper-streaming` 的 `MeteringEvent` 结构及多个开源实现交叉确认)。sub2api 在此基础上做了两层处理:
 
-- **不支持 Anthropic 提示词缓存(`cache_control`)**:上游是 `generateAssistantResponse`(Amazon Q / CodeWhisperer 格式),非 Anthropic Messages API。转换时 `cache_control` 被丢弃,响应无 `cache_read_input_tokens` / `cache_creation_input_tokens`。
 - **input token 只能估算**:Kiro 不给 prompt/completion 拆分。sub2api 用 `contextUsageEvent`(上下文占用% × 窗口)估算 input;output 由流式 chunk 累加(较准)。这与所有第三方工具的做法一致,非 sub2api 缺陷。
-- **`meteringEvent` = 真实 credit 消耗**:payload 形如 `{"unit":"credit","usage":0.34}`,是 Kiro **唯一给出的真实成本数字**(对应 Pro/Power 的月度 credit 额度)。sba2api 已解析并累加到 `StreamResult.CreditUsage`,每次请求经 `kiro.request_credit_usage` 日志透出(用量面板/计费落库为后续项)。
 
-> 结论:kiro 账号的 token 数字是**估算值**,真实成本口径请看 credit 消耗。
+- **提示词缓存 = 中转层合成(非真缓存,不省 credit)**:上游是 `generateAssistantResponse`(Amazon Q / CodeWhisperer 格式),`cache_control` 传不到上游、也不回传 `cache_read/creation` token。sub2api 移植 M-JYuan/kiro.rs 的 `cache_tracker`,在中转层**模拟** Anthropic 滑动窗口缓存的「最长公共前缀命中」语义,给客户端一个符合 Anthropic 语义的账面(`internal/pkg/kiro/cache_tracker.go`):按 credential(account.ID)隔离的进程内前缀指纹表,`Compute` 只读、`Update` 仅在上游成功后写、命中不续 TTL、区分 5m/1h、按模型 min-cacheable 过滤。合成的 `cache_read/creation` 注入客户端响应 usage,并按既有 token 计费口径计价(路线①)。**重申:这是账面兼容层,不会降低 Kiro 的真实 credit 成本,重启即清空。**
+
+- **`meteringEvent` = 真实 credit 消耗**:payload 形如 `{"unit":"credit","usage":0.34}`,是 Kiro **唯一给出的真实成本数字**(对应 Pro/Power 的月度 credit 额度)。sub2api 累加到 `StreamResult.CreditUsage`,并**三处透出**:① 客户端响应 usage 的 `credit_usage`/`credit_unit`;② `kiro.request_credit_usage` 结构化日志;③ 落库 `usage_logs.kiro_credit_usage`(迁移 `159`),管理端用量表 token 明细展示「Kiro 额度消耗」。credit 仅作观测/对账,不参与 token 计费。
+
+> 结论:kiro 账号的 **token 是估算值、cache 是中转层合成的账面**,真实成本口径唯一看 **credit** 消耗。
 
 ---
 
