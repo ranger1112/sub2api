@@ -19,6 +19,7 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 	var order []int
 	var stopReason, stopSequence any
 	var inputTokens any
+	var creditUsage, creditUnit any
 	outputTokens := 0
 
 	for _, e := range events {
@@ -79,6 +80,12 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 					inputTokens = v
 				}
 				outputTokens = eventIndex(u["output_tokens"])
+				if v, ok := u["credit_usage"]; ok {
+					creditUsage = v
+				}
+				if v, ok := u["credit_unit"]; ok {
+					creditUnit = v
+				}
 			}
 		}
 	}
@@ -103,6 +110,12 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 		usage["input_tokens"] = inputTokens
 	}
 	usage["output_tokens"] = outputTokens
+	if creditUsage != nil {
+		usage["credit_usage"] = creditUsage
+	}
+	if creditUnit != nil {
+		usage["credit_unit"] = creditUnit
+	}
 	message["usage"] = usage
 
 	return message

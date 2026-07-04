@@ -372,6 +372,31 @@ func TestAssembleMessage_CarriesCache(t *testing.T) {
 	}
 }
 
+func TestStreamContext_CreditUsageInResponse(t *testing.T) {
+	withFixedUUID(t)
+	c := NewStreamContext("claude-sonnet-4-5", 100, false, nil)
+
+	var events []SSEEvent
+	events = append(events, c.GenerateInitialEvents()...)
+	events = append(events, c.ProcessKiroEvent(Event{Kind: EventAssistantResponse, Content: "hi"})...)
+	events = append(events, c.ProcessKiroEvent(Event{Kind: EventMetering, MeteringUsage: 0.34, MeteringUnit: "credit"})...)
+	events = append(events, c.GenerateFinalEvents()...)
+
+	// 流式:credit 透传进 message_delta.usage。
+	md, _ := firstEvent(events, "message_delta")
+	mdUsage := md.Data["usage"].(map[string]any)
+	if mdUsage["credit_usage"] != 0.34 || mdUsage["credit_unit"] != "credit" {
+		t.Fatalf("message_delta credit fields = %+v", mdUsage)
+	}
+
+	// 非流式:AssembleMessage 继承 credit。
+	msg := AssembleMessage(events)
+	au := msg["usage"].(map[string]any)
+	if au["credit_usage"] != 0.34 || au["credit_unit"] != "credit" {
+		t.Fatalf("assembled credit fields = %+v", au)
+	}
+}
+
 func TestExtractThinkingFromCompleteText(t *testing.T) {
 	thinking, ok, remaining := ExtractThinkingFromCompleteText("<thinking>\nmy reasoning</thinking>\n\nthe answer")
 	if !ok || thinking != "my reasoning" || remaining != "the answer" {

@@ -320,6 +320,7 @@ type StreamContext struct {
 	hasContextTokens   bool
 	OutputTokens       int
 	CreditUsage        float64 // 累加 meteringEvent.usage:本次响应消耗的 credit 总量(Kiro 真实计费口径)
+	CreditUnit         string  // meteringEvent.unit(通常 "credit"),随 CreditUsage 透传给客户端
 
 	// 合成提示词缓存计数(由网关经 CacheTracker 算出后 SetCache 注入),注入客户端 usage。
 	cacheRead       int
@@ -446,6 +447,9 @@ func (c *StreamContext) ProcessKiroEvent(ev Event) []SSEEvent {
 	case EventMetering:
 		// meteringEvent 携带本次请求的 credit 消耗(不产生 SSE 内容);累加供上层观测/计费。
 		c.CreditUsage += ev.MeteringUsage
+		if ev.MeteringUnit != "" {
+			c.CreditUnit = ev.MeteringUnit
+		}
 		return nil
 	default:
 		return nil
@@ -717,7 +721,15 @@ func (c *StreamContext) GenerateFinalEvents() []SSEEvent {
 	if c.hasContextTokens {
 		finalInputTokens = c.contextInputTokens
 	}
-	events = append(events, c.state.generateFinalEvents(c.usageWithCache(finalInputTokens, c.OutputTokens))...)
+	usage := c.usageWithCache(finalInputTokens, c.OutputTokens)
+	// Kiro 真实成本口径:把 meteringEvent 的 credit 透传给客户端(与合成缓存双轨并存)。
+	if c.CreditUsage > 0 {
+		usage["credit_usage"] = c.CreditUsage
+		if c.CreditUnit != "" {
+			usage["credit_unit"] = c.CreditUnit
+		}
+	}
+	events = append(events, c.state.generateFinalEvents(usage)...)
 	return events
 }
 
