@@ -279,7 +279,7 @@ func (m *sseStateManager) sortedBlockIndices() []int {
 	return indices
 }
 
-func (m *sseStateManager) generateFinalEvents(inputTokens, outputTokens int) []SSEEvent {
+func (m *sseStateManager) generateFinalEvents(usage map[string]any) []SSEEvent {
 	var events []SSEEvent
 	for _, index := range m.sortedBlockIndices() {
 		b := m.activeBlocks[index]
@@ -293,7 +293,7 @@ func (m *sseStateManager) generateFinalEvents(inputTokens, outputTokens int) []S
 		events = append(events, SSEEvent{Event: "message_delta", Data: map[string]any{
 			"type":  "message_delta",
 			"delta": map[string]any{"stop_reason": m.getStopReason(), "stop_sequence": nil},
-			"usage": map[string]any{"input_tokens": inputTokens, "output_tokens": outputTokens},
+			"usage": usage,
 		}})
 	}
 	if !m.messageEnded {
@@ -320,6 +320,13 @@ type StreamContext struct {
 	hasContextTokens   bool
 	OutputTokens       int
 	CreditUsage        float64 // 累加 meteringEvent.usage:本次响应消耗的 credit 总量(Kiro 真实计费口径)
+
+	// 合成提示词缓存计数(由网关经 CacheTracker 算出后 SetCache 注入),注入客户端 usage。
+	cacheRead       int
+	cacheCreation   int
+	cacheCreation5m int
+	cacheCreation1h int
+	hasCache        bool
 
 	toolBlockIndices map[string]int
 	toolNameMap      map[string]string // 短名 → 原名,响应时还原
@@ -351,6 +358,35 @@ func NewStreamContext(model string, inputTokens int, thinkingEnabled bool, toolN
 	}
 }
 
+// SetCache 注入本次请求的合成缓存计数(网关经 CacheTracker 算出),影响客户端 usage:
+// message_start / message_delta 会带上 cache_read/creation,且 input_tokens 扣成非缓存部分。
+func (c *StreamContext) SetCache(r CacheResult) {
+	c.cacheRead = r.CacheReadInputTokens
+	c.cacheCreation = r.CacheCreationInputTokens
+	c.cacheCreation5m = r.CacheCreation5mTokens
+	c.cacheCreation1h = r.CacheCreation1hTokens
+	c.hasCache = c.cacheRead > 0 || c.cacheCreation > 0
+}
+
+// usageWithCache 构建 usage 对象:input_tokens 扣掉缓存部分(互斥,避免重复计费),
+// 有缓存时附带 cache_read/creation 及嵌套 cache_creation 5m/1h 明细。
+func (c *StreamContext) usageWithCache(inputTokens, outputTokens int) map[string]any {
+	input := inputTokens - c.cacheRead - c.cacheCreation
+	if input < 0 {
+		input = 0
+	}
+	usage := map[string]any{"input_tokens": input, "output_tokens": outputTokens}
+	if c.hasCache {
+		usage["cache_read_input_tokens"] = c.cacheRead
+		usage["cache_creation_input_tokens"] = c.cacheCreation
+		usage["cache_creation"] = map[string]any{
+			"ephemeral_5m_input_tokens": c.cacheCreation5m,
+			"ephemeral_1h_input_tokens": c.cacheCreation1h,
+		}
+	}
+	return usage
+}
+
 func (c *StreamContext) createMessageStartEvent() map[string]any {
 	return map[string]any{
 		"type": "message_start",
@@ -362,7 +398,7 @@ func (c *StreamContext) createMessageStartEvent() map[string]any {
 			"model":         c.Model,
 			"stop_reason":   nil,
 			"stop_sequence": nil,
-			"usage":         map[string]any{"input_tokens": c.InputTokens, "output_tokens": 1},
+			"usage":         c.usageWithCache(c.InputTokens, 1),
 		},
 	}
 }
@@ -681,7 +717,7 @@ func (c *StreamContext) GenerateFinalEvents() []SSEEvent {
 	if c.hasContextTokens {
 		finalInputTokens = c.contextInputTokens
 	}
-	events = append(events, c.state.generateFinalEvents(finalInputTokens, c.OutputTokens)...)
+	events = append(events, c.state.generateFinalEvents(c.usageWithCache(finalInputTokens, c.OutputTokens))...)
 	return events
 }
 

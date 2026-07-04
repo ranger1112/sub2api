@@ -287,6 +287,91 @@ func TestFindRealThinkingEndTag(t *testing.T) {
 	}
 }
 
+// ---- 合成缓存注入 ----
+
+func TestStreamContext_CacheUsageInjection(t *testing.T) {
+	withFixedUUID(t)
+	c := NewStreamContext("claude-sonnet-4-5", 25000, false, nil) // 200K window
+	c.SetCache(CacheResult{
+		CacheReadInputTokens:     12000,
+		CacheCreationInputTokens: 3000,
+		CacheCreation5mTokens:    3000,
+		CacheCreation1hTokens:    0,
+	})
+
+	initial := c.GenerateInitialEvents()
+	ms, ok := firstEvent(initial, "message_start")
+	if !ok {
+		t.Fatal("missing message_start")
+	}
+	msUsage := ms.Data["message"].(map[string]any)["usage"].(map[string]any)
+	// message_start 用估算 total(25000)扣缓存:25000 - 12000 - 3000 = 10000。
+	if msUsage["input_tokens"] != 10000 {
+		t.Fatalf("message_start input_tokens = %v, want 10000", msUsage["input_tokens"])
+	}
+	if msUsage["cache_read_input_tokens"] != 12000 || msUsage["cache_creation_input_tokens"] != 3000 {
+		t.Fatalf("message_start cache fields = %+v", msUsage)
+	}
+	cc, _ := msUsage["cache_creation"].(map[string]any)
+	if cc["ephemeral_5m_input_tokens"] != 3000 || cc["ephemeral_1h_input_tokens"] != 0 {
+		t.Fatalf("message_start cache_creation breakdown = %+v", cc)
+	}
+
+	c.ProcessKiroEvent(Event{Kind: EventAssistantResponse, Content: "hi"})
+	c.ProcessKiroEvent(Event{Kind: EventContextUsage, ContextUsagePercentage: 10.0}) // 10% of 200000 = 20000
+
+	final := c.GenerateFinalEvents()
+	md, _ := firstEvent(final, "message_delta")
+	mdUsage := md.Data["usage"].(map[string]any)
+	// message_delta 用 contextUsage 真值(20000)扣缓存:20000 - 12000 - 3000 = 5000。
+	if mdUsage["input_tokens"] != 5000 {
+		t.Fatalf("message_delta input_tokens = %v, want 5000", mdUsage["input_tokens"])
+	}
+	if mdUsage["cache_read_input_tokens"] != 12000 || mdUsage["cache_creation_input_tokens"] != 3000 {
+		t.Fatalf("message_delta cache fields = %+v", mdUsage)
+	}
+}
+
+func TestStreamContext_NoCacheNoFields(t *testing.T) {
+	withFixedUUID(t)
+	c := NewStreamContext("claude-sonnet-4-5", 100, false, nil)
+	initial := c.GenerateInitialEvents()
+	ms, _ := firstEvent(initial, "message_start")
+	msUsage := ms.Data["message"].(map[string]any)["usage"].(map[string]any)
+	// 未 SetCache:input_tokens 保持原值,不出现任何缓存字段(向后兼容)。
+	if msUsage["input_tokens"] != 100 {
+		t.Fatalf("input_tokens = %v, want 100", msUsage["input_tokens"])
+	}
+	if _, ok := msUsage["cache_read_input_tokens"]; ok {
+		t.Fatalf("未 SetCache 不应出现 cache_read 字段: %+v", msUsage)
+	}
+	if _, ok := msUsage["cache_creation"]; ok {
+		t.Fatalf("未 SetCache 不应出现 cache_creation 字段: %+v", msUsage)
+	}
+}
+
+func TestAssembleMessage_CarriesCache(t *testing.T) {
+	withFixedUUID(t)
+	c := NewStreamContext("claude-sonnet-4-5", 25000, false, nil)
+	c.SetCache(CacheResult{CacheReadInputTokens: 12000, CacheCreationInputTokens: 3000, CacheCreation5mTokens: 3000})
+
+	var events []SSEEvent
+	events = append(events, c.GenerateInitialEvents()...)
+	events = append(events, c.ProcessKiroEvent(Event{Kind: EventAssistantResponse, Content: "hi"})...)
+	events = append(events, c.ProcessKiroEvent(Event{Kind: EventContextUsage, ContextUsagePercentage: 10.0})...)
+	events = append(events, c.GenerateFinalEvents()...)
+
+	msg := AssembleMessage(events)
+	usage := msg["usage"].(map[string]any)
+	if usage["cache_read_input_tokens"] != 12000 {
+		t.Fatalf("assembled usage 缺 cache_read: %+v", usage)
+	}
+	// 非流式最终 input 取 message_delta 的非缓存值:20000 - 12000 - 3000 = 5000。
+	if usage["input_tokens"] != 5000 {
+		t.Fatalf("assembled input_tokens = %v, want 5000", usage["input_tokens"])
+	}
+}
+
 func TestExtractThinkingFromCompleteText(t *testing.T) {
 	thinking, ok, remaining := ExtractThinkingFromCompleteText("<thinking>\nmy reasoning</thinking>\n\nthe answer")
 	if !ok || thinking != "my reasoning" || remaining != "the answer" {
