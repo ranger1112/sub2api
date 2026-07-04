@@ -4991,6 +4991,7 @@ export default {
       cacheCreation5mTokens: '缓存创建',
       cacheCreation1hTokens: '缓存创建',
       cacheReadTokens: '缓存读取 Token',
+      kiroCreditUsage: 'Kiro 额度消耗',
       failedToLoad: '加载使用记录失败',
       billingType: '计费类型',
       allBillingTypes: '全部计费类型',

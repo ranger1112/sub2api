@@ -286,6 +286,11 @@
             <span class="text-gray-400">{{ t('usage.totalTokens') }}</span>
             <span class="font-semibold text-blue-400">{{ ((tokenTooltipData?.input_tokens || 0) + (tokenTooltipData?.output_tokens || 0) + (tokenTooltipData?.cache_creation_tokens || 0) + (tokenTooltipData?.cache_read_tokens || 0)).toLocaleString() }}</span>
           </div>
+          <!-- Kiro 真实 credit 消耗（非 token，不计入合计；仅 Kiro 账号 > 0） -->
+          <div v-if="tokenTooltipData && (tokenTooltipData.kiro_credit_usage || 0) > 0" class="flex items-center justify-between gap-6 border-t border-gray-700 pt-1.5">
+            <span class="text-gray-400">{{ t('admin.usage.kiroCreditUsage') }}</span>
+            <span class="font-semibold text-emerald-400">{{ (tokenTooltipData.kiro_credit_usage || 0).toLocaleString(undefined, { maximumFractionDigits: 4 }) }}</span>
+          </div>
         </div>
         <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
       </div>

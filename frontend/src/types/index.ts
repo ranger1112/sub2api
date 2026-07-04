@@ -1348,6 +1348,8 @@ export interface AdminUsageLog extends UsageLog {
   account_rate_multiplier?: number | null
   // 自定义定价规则计算的账号统计费用（nil 时使用 total_cost * multiplier）
   account_stats_cost?: number | null
+  // Kiro 账号本次请求消耗的真实 credit（meteringEvent.usage 累计，非 Kiro 恒 0，仅观测）
+  kiro_credit_usage?: number
 
   // 渠道 ID 和计费等级（仅管理员可见）
   channel_id?: number | null
