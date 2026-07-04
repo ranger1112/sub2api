@@ -323,6 +323,8 @@ func (s *KiroGatewayService) buildForwardResult(requestedModel string, res *kiro
 		if res.Model != "" && res.Model != requestedModel {
 			fr.UpstreamModel = res.Model
 		}
+		// 真实 credit 消耗落到 ForwardResult,供 RecordUsage 写入 usage_logs.kiro_credit_usage。
+		fr.KiroCreditUsage = res.CreditUsage
 		// Kiro 唯一的真实成本口径是 credit(meteringEvent.usage);token 数只能估算。
 		// 记录真实 credit 消耗供观测/计费落库(用量面板落库见 usage-log kiro_credit_usage)。
 		if res.CreditUsage > 0 {

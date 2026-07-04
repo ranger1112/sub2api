@@ -532,6 +532,8 @@ type AdminUsageLog struct {
 	AccountRateMultiplier *float64 `json:"account_rate_multiplier"`
 	// AccountStatsCost 自定义定价规则计算的账号统计费用（nil 表示使用默认公式）
 	AccountStatsCost *float64 `json:"account_stats_cost,omitempty"`
+	// KiroCreditUsage Kiro 账号本次请求消耗的 credit（非 Kiro 请求恒为 0）
+	KiroCreditUsage float64 `json:"kiro_credit_usage"`
 
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`

@@ -166,6 +166,10 @@ type UsageLog struct {
 	// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）
 	CacheTTLOverridden bool
 
+	// KiroCreditUsage 是 Kiro 账号本次请求消耗的 credit（meteringEvent.usage 累计）。
+	// Kiro 唯一的真实成本口径;非 Kiro 账号恒为 0。仅作观测/对账展示,不参与 token 计费。
+	KiroCreditUsage float64
+
 	// 图片生成字段
 	ImageCount         int
 	ImageSize          *string
