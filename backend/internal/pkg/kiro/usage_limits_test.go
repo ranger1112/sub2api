@@ -61,6 +61,52 @@ func TestBuildUsageLimitsRequest_APIKeyCredential(t *testing.T) {
 	}
 }
 
+func TestBuildUsageLimitsRequest_ExternalIdp(t *testing.T) {
+	cred := &Credentials{
+		AccessToken:  "ms-jwt-tok",
+		AuthMethod:   "external_idp",
+		ProfileArn:   "arn:aws:codewhisperer:us-east-1:123:profile/ABC",
+		RefreshToken: "rt",
+	}
+	req, err := BuildUsageLimitsRequest(context.Background(), cred, DefaultClientConfig(), nil)
+	if err != nil {
+		t.Fatalf("BuildUsageLimitsRequest: %v", err)
+	}
+	// external_idp 用量走管理网关(GET),而非 AWS 直连(POST)。
+	if req.Method != "GET" {
+		t.Fatalf("method = %s, want GET", req.Method)
+	}
+	if req.Host != "management.us-east-1.kiro.dev" {
+		t.Fatalf("host = %s, want management.us-east-1.kiro.dev", req.Host)
+	}
+	if req.URL.Path != "/getUsageLimits" {
+		t.Fatalf("path = %s", req.URL.Path)
+	}
+	q := req.URL.Query()
+	for k, want := range map[string]string{
+		"origin":       "AI_EDITOR",
+		"profileArn":   "arn:aws:codewhisperer:us-east-1:123:profile/ABC",
+		"resourceType": "AGENTIC_REQUEST",
+	} {
+		if got := q.Get(k); got != want {
+			t.Fatalf("query %s = %q, want %q", k, got, want)
+		}
+	}
+	if req.Header.Get("Authorization") != "Bearer ms-jwt-tok" {
+		t.Fatalf("bearer = %q", req.Header.Get("Authorization"))
+	}
+	if got := req.Header["TokenType"]; len(got) != 1 || got[0] != "EXTERNAL_IDP" {
+		t.Fatalf("TokenType header = %v, want [EXTERNAL_IDP]", got)
+	}
+	if req.Header.Get("x-amzn-kiro-profile-arn") != "arn:aws:codewhisperer:us-east-1:123:profile/ABC" {
+		t.Fatalf("missing x-amzn-kiro-profile-arn header")
+	}
+	// 不应触达 AWS 直连。
+	if req.URL.Host == "q.us-east-1.amazonaws.com" {
+		t.Fatalf("external_idp must not hit AWS-direct host")
+	}
+}
+
 func TestParseUsageLimits_Breakdown(t *testing.T) {
 	body := []byte(`{
 		"subscriptionType": "FREE",

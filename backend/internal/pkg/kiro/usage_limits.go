@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -31,15 +32,20 @@ func BuildUsageLimitsBody(cred *Credentials) []byte {
 // 仅目标路径改为 /getUsageLimits。body 为空时自动使用 BuildUsageLimitsBody。
 // 调用方负责用合适的 http.Client(代理 / TLS 指纹)执行返回的请求。
 func BuildUsageLimitsRequest(ctx context.Context, cred *Credentials, cfg ClientConfig, body []byte) (*http.Request, error) {
+	// external_idp:用量同样走 Kiro 管理网关 management.{region}.kiro.dev(而非 AWS 直连)。
+	if strings.EqualFold(cred.AuthMethod, "external_idp") {
+		return buildExternalIdpUsageLimitsRequest(ctx, cred, cfg)
+	}
+
 	apiRegion := cred.EffectiveAPIRegion(cfg)
 	host := "q." + apiRegion + ".amazonaws.com"
-	url := "https://" + host + UsageLimitsPath
+	urlStr := "https://" + host + UsageLimitsPath
 	machineID := MachineID(cred, cfg)
 	if len(body) == 0 {
 		body = BuildUsageLimitsBody(cred)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlStr, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -62,6 +68,42 @@ func BuildUsageLimitsRequest(ctx context.Context, cred *Credentials, cfg ClientC
 	if cred.IsAPIKeyCredential() {
 		h.Set("tokentype", "API_KEY")
 	}
+	return req, nil
+}
+
+// buildExternalIdpUsageLimitsRequest 为 external_idp 账号构造 getUsageLimits 请求。
+//
+// 与 AWS 直连不同,external_idp 的用量查询走 Kiro 管理网关
+// management.{region}.kiro.dev/getUsageLimits(GET + query 参数),以 external IdP
+// (如 Microsoft Entra)令牌直接作 Bearer,并带 TokenType: EXTERNAL_IDP 告知网关。
+// 经真机抓包证实:GET,query 携带 origin=AI_EDITOR & profileArn & resourceType=AGENTIC_REQUEST。
+func buildExternalIdpUsageLimitsRequest(ctx context.Context, cred *Credentials, cfg ClientConfig) (*http.Request, error) {
+	region := cred.EffectiveAPIRegion(cfg)
+	host := "management." + region + ".kiro.dev"
+
+	q := url.Values{}
+	q.Set("origin", "AI_EDITOR")
+	if cred.ProfileArn != "" {
+		q.Set("profileArn", cred.ProfileArn)
+	}
+	q.Set("resourceType", "AGENTIC_REQUEST")
+	urlStr := "https://" + host + UsageLimitsPath + "?" + q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Host = host
+
+	h := req.Header
+	h.Set("Accept", "application/json")
+	h.Set("User-Agent", "KiroAgent")
+	h.Set("Authorization", "Bearer "+cred.BearerToken())
+	if cred.ProfileArn != "" {
+		h.Set("x-amzn-kiro-profile-arn", cred.ProfileArn)
+	}
+	// 保留抓包观测到的确切大小写 TokenType(避免 canonical 化为 "Tokentype")。
+	req.Header["TokenType"] = []string{"EXTERNAL_IDP"}
 	return req, nil
 }
 

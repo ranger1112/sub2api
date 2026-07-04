@@ -4322,6 +4322,7 @@ export default {
         gemini3Flash: 'G3F',
         gemini3Image: 'G31FI',
         claude: 'Claude',
+        kiro: 'Kiro',
         grokRequests: 'Req',
         grokTokens: 'Tok',
         grokUnknown: 'Grok quota is unknown until the first upstream response includes xAI rate-limit headers.',

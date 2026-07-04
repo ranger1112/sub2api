@@ -506,6 +506,48 @@
       </div>
     </template>
 
+    <!-- Kiro accounts: monthly request/credit quota (usageInfo.five_hour) -->
+    <template v-else-if="account.platform === 'kiro'">
+      <!-- Loading state -->
+      <div v-if="loading" class="space-y-1.5">
+        <div class="flex items-center gap-1">
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+      </div>
+
+      <!-- Error state -->
+      <div v-else-if="error" class="text-xs text-red-500">
+        {{ error }}
+      </div>
+
+      <!-- Usage data -->
+      <div v-else-if="usageInfo?.five_hour" class="space-y-1">
+        <!-- API error (degraded response) -->
+        <div v-if="usageInfo.error" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[200px]" :title="usageInfo.error">
+          {{ usageInfo.error }}
+        </div>
+        <UsageProgressBar
+          :label="t('admin.accounts.usageWindow.kiro')"
+          :utilization="usageInfo.five_hour.utilization"
+          :resets-at="usageInfo.five_hour.resets_at"
+          color="indigo"
+        />
+        <div
+          v-if="kiroRequestsLabel"
+          class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400"
+        >
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+            {{ kiroRequestsLabel }}
+          </span>
+        </div>
+      </div>
+
+      <!-- No data yet -->
+      <div v-else class="text-xs text-gray-400">-</div>
+    </template>
+
     <!-- Other accounts: no usage window -->
     <template v-else>
       <div class="text-xs text-gray-400">-</div>
@@ -637,6 +679,8 @@ let visibilityObserver: IntersectionObserver | null = null
 const showUsageWindows = computed(() => {
   // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
   if (props.account.platform === 'gemini') return true
+  // Kiro: monthly request/credit quota is available for both oauth and apikey accounts.
+  if (props.account.platform === 'kiro') return true
   return props.account.type === 'oauth' || props.account.type === 'setup-token'
 })
 
@@ -655,6 +699,9 @@ const shouldFetchUsage = computed(() => {
   }
   if (props.account.platform === 'openai') {
     return props.account.type === 'oauth'
+  }
+  if (props.account.platform === 'kiro') {
+    return props.account.type === 'oauth' || props.account.type === 'apikey'
   }
   return false
 })
@@ -1166,6 +1213,14 @@ const copyValidationURL = async () => {
 
 const isAnthropicOAuthOrSetupToken = computed(() => {
   return props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token')
+})
+
+// Kiro monthly request quota label (used / limit). Tolerates missing counts.
+const kiroRequestsLabel = computed(() => {
+  const fh = usageInfo.value?.five_hour
+  if (!fh || fh.limit_requests == null) return null
+  const used = fh.used_requests ?? 0
+  return `${formatCompactNumber(used, { allowBillions: false })} / ${formatCompactNumber(fh.limit_requests, { allowBillions: false })} req`
 })
 
 const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?: boolean }) => {

@@ -3499,6 +3499,7 @@ export default {
         gemini3Flash: 'G3F',
         gemini3Image: 'G31FI',
         claude: 'Claude',
+        kiro: 'Kiro',
         grokRequests: '请求',
         grokTokens: 'Token',
         grokUnknown: 'Grok 配额需等待首次上游响应返回 xAI rate-limit 头后显示。',
