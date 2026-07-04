@@ -319,6 +319,7 @@ type StreamContext struct {
 	contextInputTokens int
 	hasContextTokens   bool
 	OutputTokens       int
+	CreditUsage        float64 // 累加 meteringEvent.usage:本次响应消耗的 credit 总量(Kiro 真实计费口径)
 
 	toolBlockIndices map[string]int
 	toolNameMap      map[string]string // 短名 → 原名,响应时还原
@@ -405,6 +406,10 @@ func (c *StreamContext) ProcessKiroEvent(ev Event) []SSEEvent {
 		if ev.ExceptionType == "ContentLengthExceededException" {
 			c.state.setStopReason("max_tokens")
 		}
+		return nil
+	case EventMetering:
+		// meteringEvent 携带本次请求的 credit 消耗(不产生 SSE 内容);累加供上层观测/计费。
+		c.CreditUsage += ev.MeteringUsage
 		return nil
 	default:
 		return nil

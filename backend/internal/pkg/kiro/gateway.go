@@ -27,6 +27,9 @@ type StreamResult struct {
 	Model        string
 	InputTokens  int
 	OutputTokens int
+	// CreditUsage 是本次请求消耗的 Kiro credit 量(累加自 meteringEvent.usage)。
+	// 这是 Kiro 唯一给出的真实成本口径;token 数(Input/Output)只能估算。
+	CreditUsage float64
 }
 
 // maxUpstreamErrorBody 是读取错误响应体时的上限。
@@ -139,6 +142,7 @@ func runStream(ctx context.Context, client *http.Client, cred *Credentials, cfg 
 		Model:        conv.ModelID,
 		InputTokens:  sc.FinalInputTokens(),
 		OutputTokens: sc.OutputTokens,
+		CreditUsage:  sc.CreditUsage,
 	}
 	// 终写失败不丢弃已算出的 result 或先前的 streamErr。
 	if err := sink(finalEvents); err != nil && streamErr == nil {

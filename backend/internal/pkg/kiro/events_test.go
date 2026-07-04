@@ -38,6 +38,13 @@ func TestEventFromFrame_ContextUsage(t *testing.T) {
 	}
 }
 
+func TestEventFromFrame_Metering(t *testing.T) {
+	ev := EventFromFrame(kiroFrame("event", "meteringEvent", `{"unit":"credit","unitPlural":"credits","usage":0.34}`))
+	if ev.Kind != EventMetering || ev.MeteringUsage != 0.34 || ev.MeteringUnit != "credit" {
+		t.Fatalf("got %+v", ev)
+	}
+}
+
 func TestEventFromFrame_ErrorAndException(t *testing.T) {
 	h := eventstream.Headers{
 		":message-type": {Type: eventstream.HeaderString, Str: "error"},

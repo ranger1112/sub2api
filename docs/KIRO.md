@@ -170,6 +170,16 @@ Kiro 走账号绑定的代理:`KiroHTTPClientFactory` = `repository.CreateKiroHT
 
 > 该服务已在 wire 中注册,但**尚未接入 admin 路由/handler**(为后续配额展示端点预留)。接入时新增一个 admin handler 调用 `KiroQuotaService.FetchUsage` 即可。
 
+### 计量与用量:token 为估算,credit 为真实
+
+**Kiro 上游不提供真实的 token / 提示词缓存账目**(经官方 `amzn-qdeveloper-streaming` 的 `MeteringEvent` 结构及多个开源实现交叉确认):
+
+- **不支持 Anthropic 提示词缓存(`cache_control`)**:上游是 `generateAssistantResponse`(Amazon Q / CodeWhisperer 格式),非 Anthropic Messages API。转换时 `cache_control` 被丢弃,响应无 `cache_read_input_tokens` / `cache_creation_input_tokens`。
+- **input token 只能估算**:Kiro 不给 prompt/completion 拆分。sub2api 用 `contextUsageEvent`(上下文占用% × 窗口)估算 input;output 由流式 chunk 累加(较准)。这与所有第三方工具的做法一致,非 sub2api 缺陷。
+- **`meteringEvent` = 真实 credit 消耗**:payload 形如 `{"unit":"credit","usage":0.34}`,是 Kiro **唯一给出的真实成本数字**(对应 Pro/Power 的月度 credit 额度)。sba2api 已解析并累加到 `StreamResult.CreditUsage`,每次请求经 `kiro.request_credit_usage` 日志透出(用量面板/计费落库为后续项)。
+
+> 结论:kiro 账号的 token 数字是**估算值**,真实成本口径请看 credit 消耗。
+
 ---
 
 ## 8. 部署检查清单

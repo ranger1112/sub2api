@@ -29,6 +29,9 @@ type Event struct {
 
 	ContextUsagePercentage float64 // ContextUsage
 
+	MeteringUsage float64 // Metering:本次请求消耗的 credit 量(meteringEvent.usage)
+	MeteringUnit  string  // Metering:计量单位,通常为 "credit"
+
 	ErrorCode     string // Error
 	ExceptionType string // Exception
 	Message       string // Error / Exception 的 payload
@@ -48,6 +51,14 @@ type assistantResponseEvent struct {
 
 type contextUsageEvent struct {
 	ContextUsagePercentage float64 `json:"contextUsagePercentage"`
+}
+
+// meteringEvent 是 Kiro 上游的计量事件。payload 形如 {"unit":"credit","usage":0.34}
+// (对照 AWS amzn-qdeveloper-streaming MeteringEvent:仅 usage/unit 两字段,不含 token)。
+// usage 是本次请求消耗的 credit 量——这是 Kiro 唯一给出的"真实成本"数字(token 数只能估算)。
+type meteringEvent struct {
+	Usage float64 `json:"usage"`
+	Unit  string  `json:"unit"`
 }
 
 // EventFromFrame 把一个帧解析为 Kiro 事件。payload 反序列化失败按空内容处理(不中断流)。
@@ -87,7 +98,9 @@ func parseEventFrame(frame *eventstream.Frame) Event {
 		_ = json.Unmarshal(frame.Payload, &p)
 		return Event{Kind: EventToolUse, ToolUse: p}
 	case "meteringEvent":
-		return Event{Kind: EventMetering}
+		var p meteringEvent
+		_ = json.Unmarshal(frame.Payload, &p)
+		return Event{Kind: EventMetering, MeteringUsage: p.Usage, MeteringUnit: p.Unit}
 	case "contextUsageEvent":
 		var p contextUsageEvent
 		_ = json.Unmarshal(frame.Payload, &p)

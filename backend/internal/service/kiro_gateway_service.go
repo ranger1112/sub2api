@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -285,6 +286,18 @@ func (s *KiroGatewayService) buildForwardResult(requestedModel string, res *kiro
 		fr.Usage = ClaudeUsage{InputTokens: res.InputTokens, OutputTokens: res.OutputTokens}
 		if res.Model != "" && res.Model != requestedModel {
 			fr.UpstreamModel = res.Model
+		}
+		// Kiro 唯一的真实成本口径是 credit(meteringEvent.usage);token 数只能估算。
+		// 记录真实 credit 消耗供观测/后续计费(用量面板/计费落库为后续项)。
+		if res.CreditUsage > 0 {
+			slog.Info("kiro.request_credit_usage",
+				"model", requestedModel,
+				"upstream_model", res.Model,
+				"credit_usage", res.CreditUsage,
+				"est_input_tokens", res.InputTokens,
+				"output_tokens", res.OutputTokens,
+				"stream", stream,
+			)
 		}
 	}
 	return fr
