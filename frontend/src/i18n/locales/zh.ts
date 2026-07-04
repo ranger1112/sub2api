@@ -3819,7 +3819,8 @@ export default {
           apiKeyRequired: '请输入 Kiro API Key',
           clientIdRequired: '请输入 IdC client ID',
           clientSecretRequired: '请输入 IdC client secret',
-          tokenEndpointRequired: '外部 IdP 账号必须填写 Token Endpoint。'
+          tokenEndpointRequired: '外部 IdP 账号必须填写 Token Endpoint。',
+          profileArnRequired: '外部 IdP 账号必须填写 Profile ARN(缺失会被 Kiro 运行时网关拒绝生成)。可在 Kiro IDE 日志 KiroLLMLogs.log 中搜索 profileArn 获取。'
         }
       },
       anthropic: {

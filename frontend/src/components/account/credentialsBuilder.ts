@@ -95,6 +95,8 @@ export function validateKiroCredentials(
   if (inputs.authMethod === 'external_idp') {
     if (!inputs.clientId.trim()) return 'admin.accounts.kiro.errors.clientIdRequired'
     if (!inputs.tokenEndpoint.trim()) return 'admin.accounts.kiro.errors.tokenEndpointRequired'
+    // The Kiro runtime gateway requires profileArn for GenerateAssistantResponse.
+    if (!inputs.profileArn.trim()) return 'admin.accounts.kiro.errors.profileArnRequired'
   }
   return null
 }

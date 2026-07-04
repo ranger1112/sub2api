@@ -3646,7 +3646,8 @@ export default {
           apiKeyRequired: 'Please enter the Kiro API key',
           clientIdRequired: 'Please enter the IdC client ID',
           clientSecretRequired: 'Please enter the IdC client secret',
-          tokenEndpointRequired: 'Token endpoint is required for External IdP accounts.'
+          tokenEndpointRequired: 'Token endpoint is required for External IdP accounts.',
+          profileArnRequired: 'Profile ARN is required for External IdP accounts (the Kiro runtime gateway rejects generation without it). Find it in the Kiro IDE logs (KiroLLMLogs.log, search "profileArn").'
         }
       },
       anthropic: {
