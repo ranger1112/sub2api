@@ -98,8 +98,9 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 	}
 
 	if !validateChallenge(respText, challenge.Expected) {
-		res.Status = MonitorStatusFailed
-		res.Message = truncateMessage(sanitizeErrorMessage(describeChallengeMismatch(challenge.Expected, respText, rawBody)))
+		status, msg := classifyChallengeMismatch(challenge.Expected, respText, rawBody)
+		res.Status = status
+		res.Message = truncateMessage(sanitizeErrorMessage(msg))
 		return res
 	}
 
@@ -118,29 +119,31 @@ func finalizeOperationalOrDegraded(res *CheckResult, latency time.Duration, late
 	return res
 }
 
-// describeChallengeMismatch 构造 challenge 校验失败的诊断信息。
+// classifyChallengeMismatch 判定 challenge 校验失败时的状态 + 诊断信息。
 //
-// 关键场景：抽取文本为空（got ""）时，上游往往是回了 2xx 但 body 其实是错误信封
-// （中转账号池空 / 瞬时限流 / 反代拦截页），只印 got "" 会把真正的原因整个丢掉，
-// 让人误以为是"模型算错"。因此当 respText 为空时，优先回填 body 里的 error 文案，
-// 否则附上原始 body 片段（复用 truncateForErrorBody 折叠空白 + 限长）。
+// respText 非空：上游确实回了文本、只是算错——这是真正的"模型失败"，判 failed，
+// 保留原始 `challenge mismatch (expected N, got %q)` 语义。
+//
+// respText 为空（got ""）：2xx 但抽不出答案文本，本质是上游/中转的错误信封
+// （账号池空 / 瞬时限流 / 反代拦截页），不是模型算错，判 error（与非 2xx 错误路径
+// 一致，便于告警/自动恢复按"基建问题"处理）。消息优先回填 body 里的 error 文案，
+// 否则附原始 body 片段（复用 truncateForErrorBody 折叠空白 + 限长）。
 // 最终整串仍会经过 sanitizeErrorMessage 擦除密钥，这里无需自行脱敏。
-func describeChallengeMismatch(expected, respText, rawBody string) string {
+func classifyChallengeMismatch(expected, respText, rawBody string) (status, message string) {
 	if strings.TrimSpace(respText) != "" {
-		// 上游确实回了文本，只是算错——保留原始语义。
-		return fmt.Sprintf("challenge mismatch (expected %s, got %q)", expected, respText)
+		return MonitorStatusFailed, fmt.Sprintf("challenge mismatch (expected %s, got %q)", expected, respText)
 	}
 	if msg := firstNonEmpty(
 		gjson.Get(rawBody, "error.message").String(),
 		gjson.Get(rawBody, "error").String(),
 		gjson.Get(rawBody, "message").String(),
 	); msg != "" {
-		return fmt.Sprintf("upstream returned 2xx with error body (expected %s): %s", expected, msg)
+		return MonitorStatusError, fmt.Sprintf("upstream returned 2xx with error body (expected %s): %s", expected, msg)
 	}
 	if snippet := truncateForErrorBody(rawBody); snippet != "" {
-		return fmt.Sprintf("upstream 2xx but no answer text (expected %s); body: %s", expected, snippet)
+		return MonitorStatusError, fmt.Sprintf("upstream 2xx but no answer text (expected %s); body: %s", expected, snippet)
 	}
-	return fmt.Sprintf("upstream 2xx with empty body (expected %s)", expected)
+	return MonitorStatusError, fmt.Sprintf("upstream 2xx with empty body (expected %s)", expected)
 }
 
 // bodyOverrideMode 归一取 opts.BodyOverrideMode，nil opts / 空串都视为 off。
