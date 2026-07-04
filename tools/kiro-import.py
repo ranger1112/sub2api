@@ -12,7 +12,7 @@
 它会:
   - 读 ~/.aws/sso/cache/ 下的 kiro-auth-token.json(IDE)或 device-sso-lsp-token.json(CLI),
     二者都在则取最近修改的;IdC 的 clientId/clientSecret 若不在 token 文件里,会自动找注册文件
-  - 自动判断 social / idc,拼出 sub2api 需要的凭据字段
+  - 自动判断 social / idc / external_idp(外部 IdP,如 Microsoft Entra),拼出 sub2api 需要的凭据字段
   - 登录 sub2api 管理端,按名字「有则更新、无则创建」(重跑即刷新 token,不产生重复账号)
   - 全程不打印任何密钥明文
 
@@ -126,9 +126,37 @@ def read_credentials():
 
     is_cli = src_name == "device-sso-lsp-token.json"
     auth_method = _first(tok, "authMethod", "auth_method").lower()
+    provider = _first(tok, "provider")
     client_id_hash = _first(tok, "clientIdHash", "client_id_hash")
+    # external_idp(委托外部身份提供商,如 Microsoft Entra ID / Azure AD)按 authMethod / provider 判断,
+    # 优先级高于 IdC 判断(external_idp 不走 clientIdHash 注册文件那一套)。
+    is_external_idp = auth_method == "external_idp" or provider.lower() == "externalidp"
     # CLI 设备流一定是 IdC/BuilderId;IDE 则按 authMethod / clientIdHash 判断。
-    is_idc = is_cli or auth_method in ("idc", "builder-id", "builderid", "iam") or bool(client_id_hash)
+    is_idc = not is_external_idp and (
+        is_cli or auth_method in ("idc", "builder-id", "builderid", "iam") or bool(client_id_hash)
+    )
+
+    if is_external_idp:
+        token_endpoint = _first(tok, "tokenEndpoint", "token_endpoint")
+        client_id = _first(tok, "clientId", "client_id")
+        if not (token_endpoint and client_id):
+            die("external_idp 登录但缺少 tokenEndpoint/clientId(token 文件字段不全)。\n"
+                "  → 确认已通过外部 IdP(如 Microsoft Entra)完整登录一次。")
+        creds = {
+            "auth_method": "external_idp",
+            "refresh_token": refresh,
+            "client_id": client_id,
+            "token_endpoint": token_endpoint,
+        }
+        for src, dst in (("accessToken", "access_token"), ("scopes", "scopes"), ("region", "region")):
+            v = _first(tok, src)
+            if v:
+                creds[dst] = v
+        client_secret = _first(tok, "clientSecret", "client_secret")
+        if client_secret:
+            creds["client_secret"] = client_secret
+        kind = "external_idp(外部 IdP / 如 Microsoft Entra)"
+        return creds, "%s(%s)" % (src_name, kind)
 
     creds = {"auth_method": "idc" if is_idc else "social", "refresh_token": refresh}
     for src, dst in (("accessToken", "access_token"), ("profileArn", "profile_arn"), ("region", "region")):
@@ -147,7 +175,6 @@ def read_credentials():
         creds["client_id"] = cid
         creds["client_secret"] = cs
 
-    provider = _first(tok, "provider")
     kind = ("idc/%s" % provider if is_idc else "social/%s" % (provider or "?"))
     return creds, "%s(%s)" % (src_name, kind)
 

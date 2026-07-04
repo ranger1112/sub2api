@@ -459,10 +459,10 @@
           </div>
         </div>
 
-        <!-- OAuth: authentication method (social / idc) -->
+        <!-- OAuth: authentication method (social / idc / external_idp) -->
         <div v-if="kiroAccountType === 'oauth'">
           <label class="input-label">{{ t('admin.accounts.kiro.authMethodLabel') }}</label>
-          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
               type="button"
               @click="kiroAuthMethod = 'social'"
@@ -491,6 +491,21 @@
               <div>
                 <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.kiro.authMethodIdc') }}</span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.kiro.authMethodIdcDesc') }}</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              @click="kiroAuthMethod = 'external_idp'"
+              :class="[
+                'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                kiroAuthMethod === 'external_idp'
+                  ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20'
+                  : 'border-gray-200 hover:border-teal-300 dark:border-dark-600 dark:hover:border-teal-700'
+              ]"
+            >
+              <div>
+                <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.accounts.kiro.authMethodExternalIdp') }}</span>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.kiro.authMethodExternalIdpDesc') }}</span>
               </div>
             </button>
           </div>
@@ -551,6 +566,53 @@
                 v-model="kiroClientSecret"
                 type="password"
                 required
+                autocomplete="new-password"
+                class="input font-mono"
+                :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
+              />
+              <p class="input-hint">{{ t('admin.accounts.kiro.clientSecretHint') }}</p>
+            </div>
+          </div>
+
+          <!-- External IdP (delegated SSO, e.g. Microsoft Entra ID) only -->
+          <div v-if="kiroAuthMethod === 'external_idp'" class="space-y-4">
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.clientIdLabel') }}</label>
+              <input
+                v-model="kiroClientId"
+                type="text"
+                required
+                class="input font-mono"
+                :placeholder="t('admin.accounts.kiro.clientIdPlaceholder')"
+              />
+              <p class="input-hint">{{ t('admin.accounts.kiro.clientIdHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.tokenEndpointLabel') }}</label>
+              <input
+                v-model="kiroTokenEndpoint"
+                type="text"
+                required
+                class="input font-mono"
+                :placeholder="t('admin.accounts.kiro.tokenEndpointPlaceholder')"
+              />
+              <p class="input-hint">{{ t('admin.accounts.kiro.tokenEndpointHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.scopesLabel') }}</label>
+              <input
+                v-model="kiroScopes"
+                type="text"
+                class="input font-mono"
+                :placeholder="t('admin.accounts.kiro.scopesPlaceholder')"
+              />
+              <p class="input-hint">{{ t('admin.accounts.kiro.scopesHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.kiro.clientSecretLabel') }}</label>
+              <input
+                v-model="kiroClientSecret"
+                type="password"
                 autocomplete="new-password"
                 class="input font-mono"
                 :placeholder="t('admin.accounts.kiro.clientSecretPlaceholder')"
@@ -3943,6 +4005,8 @@ const kiroApiRegion = ref('')
 const kiroMachineId = ref('')
 const kiroClientId = ref('')
 const kiroClientSecret = ref('')
+const kiroTokenEndpoint = ref('')
+const kiroScopes = ref('')
 const kiroApiKey = ref('')
 const kiroShowAdvanced = ref(false)
 
@@ -3959,6 +4023,8 @@ function collectKiroInputs() {
     machineId: kiroMachineId.value,
     clientId: kiroClientId.value,
     clientSecret: kiroClientSecret.value,
+    tokenEndpoint: kiroTokenEndpoint.value,
+    scopes: kiroScopes.value,
     apiKey: kiroApiKey.value
   }
 }
@@ -3975,6 +4041,8 @@ function resetKiroInputs() {
   kiroMachineId.value = ''
   kiroClientId.value = ''
   kiroClientSecret.value = ''
+  kiroTokenEndpoint.value = ''
+  kiroScopes.value = ''
   kiroApiKey.value = ''
   kiroShowAdvanced.value = false
 }

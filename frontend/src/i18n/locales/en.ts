@@ -3605,6 +3605,8 @@ export default {
         authMethodSocialDesc: 'AWS Builder ID social sign-in',
         authMethodIdc: 'Enterprise SSO (IdC)',
         authMethodIdcDesc: 'IAM Identity Center with client credentials',
+        authMethodExternalIdp: 'External IdP (SSO)',
+        authMethodExternalIdpDesc: 'Delegated sign-in via an external identity provider such as Microsoft Entra ID / Azure AD.',
         accessTokenLabel: 'Access Token (optional)',
         accessTokenPlaceholder: 'Paste the Kiro access token',
         accessTokenHint: 'Optional. Leave blank to let the server obtain it from the refresh token.',
@@ -3619,7 +3621,13 @@ export default {
         clientIdHint: 'Required for Enterprise SSO (IdC).',
         clientSecretLabel: 'Client Secret',
         clientSecretPlaceholder: 'IdC client secret',
-        clientSecretHint: 'Required for Enterprise SSO (IdC).',
+        clientSecretHint: 'Required for Enterprise SSO (IdC). Optional for External IdP (leave blank for public/PKCE clients).',
+        tokenEndpointLabel: 'Token Endpoint',
+        tokenEndpointPlaceholder: 'https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token',
+        tokenEndpointHint: 'Required. The external IdP OAuth2 token endpoint used to refresh the access token. Copy the `tokenEndpoint` field from kiro-auth-token.json.',
+        scopesLabel: 'Scopes',
+        scopesPlaceholder: 'api://<app>/codewhisperer:completions offline_access',
+        scopesHint: 'Optional but recommended. Space-separated OAuth scopes; include offline_access so the refresh token rotates. Copy the `scopes` field from kiro-auth-token.json.',
         regionLabel: 'Region (optional)',
         regionPlaceholder: 'us-east-1',
         authRegionLabel: 'Auth Region (optional)',
@@ -3637,7 +3645,8 @@ export default {
           refreshTokenRequired: 'Please enter the Kiro refresh token',
           apiKeyRequired: 'Please enter the Kiro API key',
           clientIdRequired: 'Please enter the IdC client ID',
-          clientSecretRequired: 'Please enter the IdC client secret'
+          clientSecretRequired: 'Please enter the IdC client secret',
+          tokenEndpointRequired: 'Token endpoint is required for External IdP accounts.'
         }
       },
       anthropic: {

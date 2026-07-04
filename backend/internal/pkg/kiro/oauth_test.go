@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -150,6 +151,103 @@ func TestRefreshToken_IdcSuccessAndCamelCaseBody(t *testing.T) {
 		if gjson.GetBytes(gotBody, kv.k).String() != kv.v {
 			t.Fatalf("idc body missing %s=%s: %s", kv.k, kv.v, gotBody)
 		}
+	}
+}
+
+func TestRefreshToken_ExternalIdpSuccess(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	fixedNow(t, now)
+
+	var gotBody []byte
+	var gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotContentType = r.Header.Get("Content-Type")
+		// 标准 OAuth2 snake_case 响应(Microsoft Entra 风格)
+		_, _ = w.Write([]byte(`{"token_type":"Bearer","expires_in":3599,"access_token":"ext-access","refresh_token":"ext-refresh"}`))
+	}))
+	defer srv.Close()
+
+	cfg := DefaultClientConfig()
+	cred := &Credentials{
+		RefreshToken:  validRefreshToken,
+		AccessToken:   "old",
+		AuthMethod:    "external_idp",
+		ClientID:      "app-client-id",
+		TokenEndpoint: srv.URL,
+		Scopes:        "api://app/codewhisperer:completions offline_access",
+	}
+
+	updated, err := RefreshToken(context.Background(), srv.Client(), cred, cfg)
+	if err != nil {
+		t.Fatalf("RefreshToken external_idp: %v", err)
+	}
+	if updated.AccessToken != "ext-access" || updated.RefreshToken != "ext-refresh" {
+		t.Fatalf("external_idp credentials not updated: %+v", updated)
+	}
+	wantExpiry := now.Add(3599 * time.Second).Format(time.RFC3339)
+	if updated.ExpiresAt != wantExpiry {
+		t.Fatalf("expiresAt = %q, want %q", updated.ExpiresAt, wantExpiry)
+	}
+	// 请求必须是 form-urlencoded 且携带标准 OAuth2 字段
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Fatalf("Content-Type = %q, want form-urlencoded", gotContentType)
+	}
+	vals, err := url.ParseQuery(string(gotBody))
+	if err != nil {
+		t.Fatalf("parse form body: %v", err)
+	}
+	for _, kv := range []struct{ k, v string }{
+		{"grant_type", "refresh_token"},
+		{"client_id", "app-client-id"},
+		{"refresh_token", validRefreshToken},
+		{"scope", "api://app/codewhisperer:completions offline_access"},
+	} {
+		if vals.Get(kv.k) != kv.v {
+			t.Fatalf("form %s = %q, want %q (body=%s)", kv.k, vals.Get(kv.k), kv.v, gotBody)
+		}
+	}
+	// 公共客户端不应带 client_secret
+	if vals.Has("client_secret") {
+		t.Fatalf("public client must not send client_secret: %s", gotBody)
+	}
+	// 原始凭据不被修改
+	if cred.AccessToken != "old" {
+		t.Fatal("input credentials must not be mutated")
+	}
+}
+
+func TestRefreshToken_ExternalIdpInvalidGrantPermanent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		// Microsoft Entra 风格:AADSTS 前缀,不含 social 的具体措辞
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"AADSTS700082: The refresh token has expired."}`))
+	}))
+	defer srv.Close()
+
+	cred := &Credentials{
+		RefreshToken:  validRefreshToken,
+		AuthMethod:    "external_idp",
+		ClientID:      "app-client-id",
+		TokenEndpoint: srv.URL,
+	}
+	_, err := RefreshToken(context.Background(), srv.Client(), cred, DefaultClientConfig())
+	var invalid *RefreshTokenInvalidError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("external_idp invalid_grant should be permanent, got %v", err)
+	}
+}
+
+func TestRefreshToken_ExternalIdpRequiresEndpointAndClientID(t *testing.T) {
+	// 缺 tokenEndpoint
+	cred := &Credentials{RefreshToken: validRefreshToken, AuthMethod: "external_idp", ClientID: "cid"}
+	if _, err := RefreshToken(context.Background(), http.DefaultClient, cred, DefaultClientConfig()); err == nil {
+		t.Fatal("external_idp without tokenEndpoint should error")
+	}
+	// 缺 clientId
+	cred = &Credentials{RefreshToken: validRefreshToken, AuthMethod: "external_idp", TokenEndpoint: "https://example.invalid/token"}
+	if _, err := RefreshToken(context.Background(), http.DefaultClient, cred, DefaultClientConfig()); err == nil {
+		t.Fatal("external_idp without clientId should error")
 	}
 }
 

@@ -3778,6 +3778,8 @@ export default {
         authMethodSocialDesc: 'AWS Builder ID 社交登录',
         authMethodIdc: '企业 SSO（IdC）',
         authMethodIdcDesc: 'IAM Identity Center，使用客户端凭据',
+        authMethodExternalIdp: '外部 IdP（SSO）',
+        authMethodExternalIdpDesc: '通过外部身份提供商（如 Microsoft Entra ID / Azure AD）委托登录。',
         accessTokenLabel: 'Access Token（可选）',
         accessTokenPlaceholder: '粘贴 Kiro access token',
         accessTokenHint: '可选。留空则由服务端使用 refresh token 获取。',
@@ -3792,7 +3794,13 @@ export default {
         clientIdHint: '企业 SSO（IdC）必填。',
         clientSecretLabel: 'Client Secret',
         clientSecretPlaceholder: 'IdC client secret',
-        clientSecretHint: '企业 SSO（IdC）必填。',
+        clientSecretHint: '企业 SSO（IdC）必填；外部 IdP 可选（公共/PKCE 客户端请留空）。',
+        tokenEndpointLabel: 'Token Endpoint',
+        tokenEndpointPlaceholder: 'https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token',
+        tokenEndpointHint: '必填。用于刷新 access token 的外部 IdP OAuth2 令牌端点。请复制 kiro-auth-token.json 中的 `tokenEndpoint` 字段。',
+        scopesLabel: 'Scopes',
+        scopesPlaceholder: 'api://<app>/codewhisperer:completions offline_access',
+        scopesHint: '可选但推荐。以空格分隔的 OAuth scopes；请包含 offline_access 以便 refresh token 轮换。请复制 kiro-auth-token.json 中的 `scopes` 字段。',
         regionLabel: 'Region（可选）',
         regionPlaceholder: 'us-east-1',
         authRegionLabel: 'Auth Region（可选）',
@@ -3810,7 +3818,8 @@ export default {
           refreshTokenRequired: '请输入 Kiro refresh token',
           apiKeyRequired: '请输入 Kiro API Key',
           clientIdRequired: '请输入 IdC client ID',
-          clientSecretRequired: '请输入 IdC client secret'
+          clientSecretRequired: '请输入 IdC client secret',
+          tokenEndpointRequired: '外部 IdP 账号必须填写 Token Endpoint。'
         }
       },
       anthropic: {

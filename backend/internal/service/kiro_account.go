@@ -6,7 +6,8 @@ import "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 // Kiro 账号凭据以明文 JSONB(account.Credentials map)存储,键名如下:
 //   access_token / refresh_token / profile_arn / auth_method / client_id /
 //   client_secret / kiro_api_key / region / auth_region / api_region /
-//   machine_id / expires_at
+//   machine_id / expires_at / token_endpoint / scopes
+// token_endpoint 与 scopes 仅用于 auth_method=external_idp(委托外部 IdP 刷新)。
 
 // IsKiro 报告账号是否属于 Kiro 平台。
 func (a *Account) IsKiro() bool {
@@ -53,6 +54,9 @@ func AccountToKiroCredentials(account *Account) kiro.Credentials {
 		APIRegion:    account.GetCredential("api_region"),
 		MachineID:    account.GetCredential("machine_id"),
 		ExpiresAt:    account.GetCredential("expires_at"),
+
+		TokenEndpoint: account.GetCredential("token_endpoint"),
+		Scopes:        account.GetCredential("scopes"),
 	}
 }
 
@@ -76,5 +80,7 @@ func BuildKiroAccountCredentials(cred kiro.Credentials) map[string]any {
 	setIf("api_region", cred.APIRegion)
 	setIf("machine_id", cred.MachineID)
 	setIf("expires_at", cred.ExpiresAt)
+	setIf("token_endpoint", cred.TokenEndpoint)
+	setIf("scopes", cred.Scopes)
 	return creds
 }

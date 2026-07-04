@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -28,6 +29,23 @@ type refreshResponse struct {
 	RefreshToken string `json:"refreshToken"`
 	ProfileArn   string `json:"profileArn"`
 	ExpiresIn    int64  `json:"expiresIn"`
+}
+
+// oauth2TokenResponse 是标准 OAuth2(RFC 6749 §5.1)token 端点的 snake_case 响应,
+// 用于 external_idp(委托外部 IdP,如 Microsoft Entra ID)。与 social/idc 的 camelCase
+// refreshResponse 不同;外部 IdP 不返回 profileArn。
+type oauth2TokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int64  `json:"expires_in"`
+}
+
+func (r oauth2TokenResponse) toRefreshResponse() refreshResponse {
+	return refreshResponse{
+		AccessToken:  r.AccessToken,
+		RefreshToken: r.RefreshToken,
+		ExpiresIn:    r.ExpiresIn,
+	}
 }
 
 // RefreshToken 刷新凭据的 access token(social 或 idc),返回更新后的 Credentials 副本。
@@ -51,6 +69,8 @@ func RefreshToken(ctx context.Context, client *http.Client, cred *Credentials, c
 	switch strings.ToLower(method) {
 	case "idc", "builder-id", "iam":
 		return refreshIdcToken(ctx, client, cred, cfg)
+	case "external_idp", "externalidp":
+		return refreshExternalIdpToken(ctx, client, cred, cfg)
 	default:
 		return refreshSocialToken(ctx, client, cred, cfg)
 	}
@@ -132,10 +152,50 @@ func refreshIdcToken(ctx context.Context, client *http.Client, cred *Credentials
 	return doRefresh(client, req, cred, "IdC")
 }
 
+// refreshExternalIdpToken 刷新委托给外部身份提供商(如 Microsoft Entra ID)的凭据。
+// 与 social/idc 不同,这里走标准 OAuth2(RFC 6749 §6):
+//   - 请求体为 application/x-www-form-urlencoded(而非 JSON);
+//   - 端点取自凭据自身的 tokenEndpoint(完整 URL,而非按 region 拼接);
+//   - 响应为标准 snake_case(access_token/refresh_token/expires_in)。
+//
+// clientSecret 可选:公共客户端(PKCE,如 Kiro 桌面端)不带 secret;机密客户端才带上。
+func refreshExternalIdpToken(ctx context.Context, client *http.Client, cred *Credentials, cfg ClientConfig) (*Credentials, error) {
+	if cred.TokenEndpoint == "" {
+		return nil, errors.New("kiro: external_idp refresh requires tokenEndpoint")
+	}
+	if cred.ClientID == "" {
+		return nil, errors.New("kiro: external_idp refresh requires clientId")
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("client_id", cred.ClientID)
+	form.Set("refresh_token", cred.RefreshToken)
+	if cred.Scopes != "" {
+		// scope 需包含 offline_access 才能拿到轮换后的新 refresh_token。
+		form.Set("scope", cred.Scopes)
+	}
+	if cred.ClientSecret != "" {
+		// 机密客户端才带 secret;公共客户端(PKCE)留空。
+		form.Set("client_secret", cred.ClientSecret)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cred.TokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	return doRefreshOAuth2(client, req, cred, "ExternalIdP")
+}
+
 // maxRefreshBodySize 限制刷新响应体读取上限,防止恶意/异常上游无限流式响应导致 OOM。
 const maxRefreshBodySize = 1 << 20 // 1 MB
 
-func doRefresh(client *http.Client, req *http.Request, cred *Credentials, kind string) (*Credentials, error) {
+// sendRefresh 执行刷新请求,读取响应体(限流),并在非 2xx 时归类错误。
+// 成功时返回原始响应体,由各解析器按自身字段命名(camelCase / snake_case)解码。
+func sendRefresh(client *http.Client, req *http.Request, kind string) ([]byte, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -145,9 +205,17 @@ func doRefresh(client *http.Client, req *http.Request, cred *Credentials, kind s
 	if err != nil {
 		return nil, fmt.Errorf("kiro: %s refresh: read response: %w", kind, err)
 	}
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, classifyRefreshError(kind, resp.StatusCode, respBody)
+	}
+	return respBody, nil
+}
+
+// doRefresh 解析 social/idc 的 camelCase 响应。
+func doRefresh(client *http.Client, req *http.Request, cred *Credentials, kind string) (*Credentials, error) {
+	respBody, err := sendRefresh(client, req, kind)
+	if err != nil {
+		return nil, err
 	}
 	var data refreshResponse
 	if err := json.Unmarshal(respBody, &data); err != nil {
@@ -156,13 +224,27 @@ func doRefresh(client *http.Client, req *http.Request, cred *Credentials, kind s
 	return applyRefresh(cred, data), nil
 }
 
+// doRefreshOAuth2 解析标准 OAuth2 的 snake_case 响应(external_idp)。
+func doRefreshOAuth2(client *http.Client, req *http.Request, cred *Credentials, kind string) (*Credentials, error) {
+	respBody, err := sendRefresh(client, req, kind)
+	if err != nil {
+		return nil, err
+	}
+	var data oauth2TokenResponse
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		return nil, fmt.Errorf("kiro: %s refresh: parse response: %w", kind, err)
+	}
+	return applyRefresh(cred, data.toRefreshResponse()), nil
+}
+
 func classifyRefreshError(kind string, status int, body []byte) error {
 	bodyStr := string(body)
 	// 400 + invalid_grant 视为 refreshToken 永久失效:
 	//   - social(kiro.dev)带具体措辞 "Invalid refresh token provided";
-	//   - idc(AWS OIDC)按 OAuth2(RFC 6749 §5.2)语义,invalid_grant 即为撤销/过期,永久失效。
+	//   - idc(AWS OIDC)/ external_idp(如 Microsoft Entra,AADSTS 前缀)按 OAuth2
+	//     (RFC 6749 §5.2)语义,invalid_grant 即为撤销/过期,永久失效。
 	if status == http.StatusBadRequest && strings.Contains(bodyStr, "invalid_grant") &&
-		(kind == "IdC" || strings.Contains(bodyStr, "Invalid refresh token provided")) {
+		(kind == "IdC" || kind == "ExternalIdP" || strings.Contains(bodyStr, "Invalid refresh token provided")) {
 		return &RefreshTokenInvalidError{Message: kind + " refreshToken invalid (invalid_grant): " + bodyStr}
 	}
 	var reason string

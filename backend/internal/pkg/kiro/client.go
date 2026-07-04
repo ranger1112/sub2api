@@ -65,7 +65,7 @@ type Credentials struct {
 	AccessToken  string
 	RefreshToken string
 	ProfileArn   string
-	AuthMethod   string // "social" | "idc";为空时按 clientId/clientSecret 推断
+	AuthMethod   string // "social" | "idc" | "external_idp";为空时按 clientId/clientSecret 推断
 	ClientID     string
 	ClientSecret string
 	KiroAPIKey   string // API Key 凭据:直接作 Bearer,无需刷新
@@ -74,6 +74,10 @@ type Credentials struct {
 	APIRegion    string
 	MachineID    string
 	ExpiresAt    string // RFC3339
+
+	// external_idp 专用:委托外部 IdP(如 Microsoft Entra ID)时的标准 OAuth2 刷新参数。
+	TokenEndpoint string // 外部 IdP 的 token 端点完整 URL(刷新请求发往此处)
+	Scopes        string // 刷新请求的 scope(空格分隔);需含 offline_access 以轮换 refresh_token
 }
 
 // IsAPIKeyCredential 报告是否为 API Key 凭据(直接用 kiroApiKey 作 Bearer)。

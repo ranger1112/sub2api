@@ -12,7 +12,7 @@ export function applyInterceptWarmup(
 
 // ── Kiro (Anthropic-compatible upstream) ──────────────────────────────
 export type KiroAccountType = 'oauth' | 'apikey'
-export type KiroAuthMethod = 'social' | 'idc'
+export type KiroAuthMethod = 'social' | 'idc' | 'external_idp'
 
 export interface KiroCredentialInputs {
   accountType: KiroAccountType
@@ -26,6 +26,8 @@ export interface KiroCredentialInputs {
   machineId: string
   clientId: string
   clientSecret: string
+  tokenEndpoint: string
+  scopes: string
   apiKey: string
 }
 
@@ -54,9 +56,13 @@ export function buildKiroCredentials(inputs: KiroCredentialInputs): Record<strin
   set('access_token', inputs.accessToken)
   set('refresh_token', inputs.refreshToken)
   set('profile_arn', inputs.profileArn)
-  if (inputs.authMethod === 'idc') {
+  if (inputs.authMethod === 'idc' || inputs.authMethod === 'external_idp') {
     set('client_id', inputs.clientId)
     set('client_secret', inputs.clientSecret)
+  }
+  if (inputs.authMethod === 'external_idp') {
+    set('token_endpoint', inputs.tokenEndpoint)
+    set('scopes', inputs.scopes)
   }
   set('region', inputs.region)
   set('auth_region', inputs.authRegion)
@@ -85,6 +91,10 @@ export function validateKiroCredentials(
   if (inputs.authMethod === 'idc') {
     if (!inputs.clientId.trim()) return 'admin.accounts.kiro.errors.clientIdRequired'
     if (!inputs.clientSecret.trim()) return 'admin.accounts.kiro.errors.clientSecretRequired'
+  }
+  if (inputs.authMethod === 'external_idp') {
+    if (!inputs.clientId.trim()) return 'admin.accounts.kiro.errors.clientIdRequired'
+    if (!inputs.tokenEndpoint.trim()) return 'admin.accounts.kiro.errors.tokenEndpointRequired'
   }
   return null
 }
