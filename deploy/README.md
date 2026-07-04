@@ -18,6 +18,9 @@ This directory contains files for deploying Sub2API on Linux servers.
 | `docker-deploy.sh` | **One-click Docker deployment script (recommended)** |
 | `.env.example` | Docker environment variables template |
 | `DOCKER.md` | Docker Hub documentation |
+| `build_image.sh` | Build `sub2api:latest` locally (image only, no export) |
+| `package_release.sh` | **Offline release packaging: build → tag `<branch>-<commit>` → `docker save` to a deployable `.tar`** (see `RELEASE_IMAGE.md`) |
+| `RELEASE_IMAGE.md` | 发版镜像离线打包流程说明 (offline release image packaging) |
 | `install.sh` | One-click binary installation script |
 | `install-datamanagementd.sh` | datamanagementd 一键安装脚本 |
 | `sub2api.service` | Systemd service unit file |

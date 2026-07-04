@@ -17,3 +17,8 @@ redis_data/
 # Temporary files
 *.tmp
 *.log
+
+# Exported image archives (docker save artifacts, e.g. sub2api-<branch>-<commit>-linux-amd64.tar)
+*.tar
+*.tar.gz
+*.tgz
