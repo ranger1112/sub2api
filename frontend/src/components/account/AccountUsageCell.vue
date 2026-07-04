@@ -523,25 +523,33 @@
       </div>
 
       <!-- Usage data -->
-      <div v-else-if="usageInfo?.five_hour" class="space-y-1">
-        <!-- API error (degraded response) -->
-        <div v-if="usageInfo.error" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[200px]" :title="usageInfo.error">
-          {{ usageInfo.error }}
-        </div>
-        <UsageProgressBar
-          :label="t('admin.accounts.usageWindow.kiro')"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          color="indigo"
-        />
-        <div
-          v-if="kiroRequestsLabel"
-          class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400"
-        >
-          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
-            {{ kiroRequestsLabel }}
+      <div v-else-if="usageInfo?.five_hour || kiroTierLabel" class="space-y-1">
+        <!-- 账户类型徽章(订阅等级,如 "KIRO PRO MAX") -->
+        <div v-if="kiroTierLabel" class="flex items-center">
+          <span :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', kiroTierClass]">
+            {{ kiroTierLabel }}
           </span>
         </div>
+        <!-- API error (degraded response) -->
+        <div v-if="usageInfo?.error" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[200px]" :title="usageInfo.error">
+          {{ usageInfo.error }}
+        </div>
+        <template v-if="usageInfo?.five_hour">
+          <UsageProgressBar
+            :label="t('admin.accounts.usageWindow.kiro')"
+            :utilization="usageInfo.five_hour.utilization"
+            :resets-at="usageInfo.five_hour.resets_at"
+            color="indigo"
+          />
+          <div
+            v-if="kiroRequestsLabel"
+            class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400"
+          >
+            <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+              {{ kiroRequestsLabel }}
+            </span>
+          </div>
+        </template>
       </div>
 
       <!-- No data yet -->
@@ -1221,6 +1229,24 @@ const kiroRequestsLabel = computed(() => {
   if (!fh || fh.limit_requests == null) return null
   const used = fh.used_requests ?? 0
   return `${formatCompactNumber(used, { allowBillions: false })} / ${formatCompactNumber(fh.limit_requests, { allowBillions: false })} req`
+})
+
+// Kiro 账户类型(订阅等级)徽章:优先显示上游可读原始名(如 "KIRO PRO MAX")。
+const kiroTierLabel = computed(() => {
+  const info = usageInfo.value
+  if (!info) return null
+  return info.subscription_tier_raw || info.subscription_tier || null
+})
+
+const kiroTierClass = computed(() => {
+  switch (usageInfo.value?.subscription_tier) {
+    case 'ULTRA':
+      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+    case 'PRO':
+      return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+    default:
+      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+  }
 })
 
 const loadUsage = async (options?: { source?: 'passive' | 'active'; bypassCache?: boolean }) => {

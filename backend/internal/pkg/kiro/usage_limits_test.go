@@ -188,3 +188,22 @@ func TestParseUsageLimits_EmptyObject(t *testing.T) {
 		t.Fatalf("expected empty breakdown, got %+v", limits.Breakdown)
 	}
 }
+
+func TestParseUsageLimits_KiroSubscriptionInfo(t *testing.T) {
+	// Kiro getUsageLimits:订阅信息嵌套在 subscriptionInfo 下,优先取可读的 subscriptionTitle。
+	body := []byte(`{
+		"nextDateReset": "2026-08-01T00:00:00.000Z",
+		"usageBreakdownList": [{"resourceType":"CREDIT","usageLimit":5000,"currentUsage":20,"unit":"INVOCATIONS"}],
+		"subscriptionInfo": {"type":"Q_DEVELOPER_STANDALONE_PRO","subscriptionTitle":"KIRO PRO MAX"}
+	}`)
+	limits, err := ParseUsageLimits(body)
+	if err != nil {
+		t.Fatalf("ParseUsageLimits: %v", err)
+	}
+	if limits.SubscriptionType != "KIRO PRO MAX" {
+		t.Fatalf("subscription = %q, want KIRO PRO MAX (from subscriptionInfo.subscriptionTitle)", limits.SubscriptionType)
+	}
+	if p := limits.Primary(); p == nil || p.Limit != 5000 || p.Used != 20 {
+		t.Fatalf("primary = %+v", p)
+	}
+}

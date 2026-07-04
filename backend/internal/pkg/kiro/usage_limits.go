@@ -208,6 +208,13 @@ func ParseUsageLimits(data []byte) (*UsageLimits, error) {
 		out.DaysUntilReset = &iv
 	}
 	out.SubscriptionType = firstString(root, usageSubscriptionKeys)
+	if out.SubscriptionType == "" {
+		// Kiro:订阅信息嵌套在 subscriptionInfo 下。优先取人类可读的 subscriptionTitle
+		// (如 "KIRO FREE"),回退到 type(如 "Q_DEVELOPER_STANDALONE_FREE")。
+		if si := root.Get("subscriptionInfo"); si.IsObject() {
+			out.SubscriptionType = firstString(si, []string{"subscriptionTitle", "type", "tier", "plan"})
+		}
+	}
 
 	return out, nil
 }

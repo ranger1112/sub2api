@@ -984,6 +984,9 @@ export interface AccountUsageInfo {
   five_hour: UsageProgress | null
   seven_day: UsageProgress | null
   seven_day_sonnet: UsageProgress | null
+  // 订阅等级(账户类型):Kiro / Antigravity 等
+  subscription_tier?: string // 归一化: FREE / PRO / ULTRA / UNKNOWN
+  subscription_tier_raw?: string // 上游原始名,如 "KIRO PRO MAX"
   gemini_shared_daily?: UsageProgress | null
   gemini_pro_daily?: UsageProgress | null
   gemini_flash_daily?: UsageProgress | null
