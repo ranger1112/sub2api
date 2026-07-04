@@ -372,6 +372,33 @@ func TestAssembleMessage_CarriesCache(t *testing.T) {
 	}
 }
 
+func TestStreamContext_CacheCappedToContextTotal(t *testing.T) {
+	withFixedUUID(t)
+	c := NewStreamContext("claude-sonnet-4-5", 25000, false, nil)
+	c.SetCache(CacheResult{CacheReadInputTokens: 12000, CacheCreationInputTokens: 3000, CacheCreation5mTokens: 3000})
+	c.GenerateInitialEvents()
+	c.ProcessKiroEvent(Event{Kind: EventAssistantResponse, Content: "hi"})
+	// contextUsage 真值 5% × 200000 = 10000 < read+creation(15000):应被夹到 10000,
+	// 保证 input 不为负、input+read+creation == 真值(互斥不被破坏,不超计费)。
+	c.ProcessKiroEvent(Event{Kind: EventContextUsage, ContextUsagePercentage: 5.0})
+
+	final := c.GenerateFinalEvents()
+	md, _ := firstEvent(final, "message_delta")
+	u := md.Data["usage"].(map[string]any)
+	input := u["input_tokens"].(int)
+	read := u["cache_read_input_tokens"].(int)
+	creation := u["cache_creation_input_tokens"].(int)
+	if input < 0 {
+		t.Fatalf("input 不应为负: %d", input)
+	}
+	if read+creation > 10000 {
+		t.Fatalf("read+creation 不应超过真值 10000: %d+%d", read, creation)
+	}
+	if input+read+creation != 10000 {
+		t.Fatalf("input+read+creation 应 == 真值 10000: %d+%d+%d", input, read, creation)
+	}
+}
+
 func TestStreamContext_CreditUsageInResponse(t *testing.T) {
 	withFixedUUID(t)
 	c := NewStreamContext("claude-sonnet-4-5", 100, false, nil)

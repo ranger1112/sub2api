@@ -49,6 +49,36 @@ type CacheResult struct {
 	CacheCreation1hTokens    int
 }
 
+// CapTo 把合成缓存计数夹到真实 total 以内(保证 read+creation ≤ total),按比例缩放并
+// 保持 read:creation 与 5m:1h 占比。缓存是按 estimate 前缀算出的,但上报/计费用的是
+// contextUsage 真值;当真值小于 estimate 前缀时,不夹会让 input 被减成负(互斥被破坏)、
+// 并把 cache_creation 按 1.25× 超计费。CapTo 在真值已知处调用即可修正。
+func (r CacheResult) CapTo(total int) CacheResult {
+	if total < 0 {
+		total = 0
+	}
+	sum := r.CacheReadInputTokens + r.CacheCreationInputTokens
+	if sum <= total {
+		return r
+	}
+	if sum == 0 {
+		return CacheResult{}
+	}
+	read := r.CacheReadInputTokens * total / sum
+	creation := total - read
+	var c5m, c1h int
+	if r.CacheCreationInputTokens > 0 {
+		c5m = r.CacheCreation5mTokens * creation / r.CacheCreationInputTokens
+		c1h = creation - c5m
+	}
+	return CacheResult{
+		CacheReadInputTokens:     read,
+		CacheCreationInputTokens: creation,
+		CacheCreation5mTokens:    c5m,
+		CacheCreation1hTokens:    c1h,
+	}
+}
+
 // cacheBlock 是递增前缀段链中的一段。
 type cacheBlock struct {
 	prefixFingerprint [32]byte
@@ -199,9 +229,16 @@ func (t *CacheTracker) Compute(credentialID int64, p *CacheProfile) CacheResult 
 	now := t.now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.pruneExpired(now)
 
 	creds, hasCreds := t.byCredential[credentialID]
+	if hasCreds {
+		// 只清理本 credential 的过期条目(避免全表扫描热路径串行)。
+		pruneCredentialEntries(creds, now)
+		if len(creds) == 0 {
+			delete(t.byCredential, credentialID)
+			hasCreds = false
+		}
+	}
 	if !hasCreds {
 		// 首次请求,无任何缓存条目 → 全部计入 cache_creation。
 		c5m, c1h := computeTTLBreakdown(p, 0)
@@ -241,13 +278,13 @@ func (t *CacheTracker) Update(credentialID int64, p *CacheProfile) {
 	now := t.now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.pruneExpired(now)
 
 	creds := t.byCredential[credentialID]
 	if creds == nil {
 		creds = map[[32]byte]cacheEntry{}
 		t.byCredential[credentialID] = creds
 	}
+	pruneCredentialEntries(creds, now) // 只清理本 credential
 
 	for _, bp := range p.cacheableBreakpoints() {
 		block := p.blocks[bp.blockIndex]
@@ -291,15 +328,11 @@ func (t *CacheTracker) evictIfOverCapacity(creds map[[32]byte]cacheEntry) {
 	}
 }
 
-func (t *CacheTracker) pruneExpired(now time.Time) {
-	for cid, creds := range t.byCredential {
-		for fp, e := range creds {
-			if !e.expiresAt.After(now) {
-				delete(creds, fp)
-			}
-		}
-		if len(creds) == 0 {
-			delete(t.byCredential, cid)
+// pruneCredentialEntries 删除单个 credential 子表中的过期条目(调用方持锁)。
+func pruneCredentialEntries(creds map[[32]byte]cacheEntry, now time.Time) {
+	for fp, e := range creds {
+		if !e.expiresAt.After(now) {
+			delete(creds, fp)
 		}
 	}
 }

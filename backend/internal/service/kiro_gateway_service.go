@@ -306,6 +306,9 @@ func kiroErrorType(status int) string {
 func (s *KiroGatewayService) buildForwardResult(requestedModel string, res *kiro.StreamResult, stream bool, start time.Time, cache kiro.CacheResult) *ForwardResult {
 	fr := &ForwardResult{Stream: stream, Duration: time.Since(start), Model: requestedModel}
 	if res != nil {
+		// 合成缓存按 estimate 前缀算出,这里按真实 total(res.InputTokens)夹一次,
+		// 保证 read+creation ≤ total,避免真值 < estimate 时超计费(与 SSE 口径一致)。
+		cache = cache.CapTo(res.InputTokens)
 		// input 扣掉合成缓存部分(input = total − read − creation,互斥,避免重复计费);
 		// 与注入客户端 SSE 的 message_delta.usage 口径一致。
 		input := res.InputTokens - cache.CacheReadInputTokens - cache.CacheCreationInputTokens

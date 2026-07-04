@@ -188,6 +188,32 @@ func TestCacheTracker_Expiry(t *testing.T) {
 	}
 }
 
+func TestCacheResult_CapTo(t *testing.T) {
+	r := CacheResult{CacheReadInputTokens: 12000, CacheCreationInputTokens: 3000, CacheCreation5mTokens: 3000}
+
+	// total 足够(≥ read+creation):原样返回。
+	if got := r.CapTo(20000); got != r {
+		t.Fatalf("total 足够不应改变: %+v", got)
+	}
+
+	// total < read+creation:按比例夹,read+creation == total,保持 4:1 比例。
+	capped := r.CapTo(9000) // sum=15000 → ×0.6:read 7200, creation 1800
+	if capped.CacheReadInputTokens != 7200 || capped.CacheCreationInputTokens != 1800 {
+		t.Fatalf("比例缩放错误: %+v", capped)
+	}
+	if capped.CacheReadInputTokens+capped.CacheCreationInputTokens != 9000 {
+		t.Fatalf("read+creation 应 == total(9000): %+v", capped)
+	}
+	if capped.CacheCreation5mTokens+capped.CacheCreation1hTokens != capped.CacheCreationInputTokens {
+		t.Fatalf("5m+1h 应 == creation: %+v", capped)
+	}
+
+	// total=0 → 全 0。
+	if got := (r.CapTo(0)); (got != CacheResult{}) {
+		t.Fatalf("total=0 应全 0: %+v", got)
+	}
+}
+
 func TestCacheTracker_NoBreakpointNoCache(t *testing.T) {
 	tr, _ := newTestTracker()
 

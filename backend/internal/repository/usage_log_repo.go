@@ -896,7 +896,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(keys)*50)
+	args := make([]any, 0, len(keys)*52)
 	argPos := 1
 	for idx, key := range keys {
 		if idx > 0 {
@@ -1124,7 +1124,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(preparedList)*50)
+	args := make([]any, 0, len(preparedList)*51)
 	argPos := 1
 	for idx, prepared := range preparedList {
 		if idx > 0 {

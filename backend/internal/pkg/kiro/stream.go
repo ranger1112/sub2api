@@ -327,7 +327,6 @@ type StreamContext struct {
 	cacheCreation   int
 	cacheCreation5m int
 	cacheCreation1h int
-	hasCache        bool
 
 	toolBlockIndices map[string]int
 	toolNameMap      map[string]string // 短名 → 原名,响应时还原
@@ -366,23 +365,30 @@ func (c *StreamContext) SetCache(r CacheResult) {
 	c.cacheCreation = r.CacheCreationInputTokens
 	c.cacheCreation5m = r.CacheCreation5mTokens
 	c.cacheCreation1h = r.CacheCreation1hTokens
-	c.hasCache = c.cacheRead > 0 || c.cacheCreation > 0
 }
 
 // usageWithCache 构建 usage 对象:input_tokens 扣掉缓存部分(互斥,避免重复计费),
 // 有缓存时附带 cache_read/creation 及嵌套 cache_creation 5m/1h 明细。
+// 合成缓存按 estimate 前缀算出,这里按本次上报的真实 total(inputTokens)夹一次,
+// 保证 read+creation ≤ total、input 不被夹成负(与计费口径一致)。
 func (c *StreamContext) usageWithCache(inputTokens, outputTokens int) map[string]any {
-	input := inputTokens - c.cacheRead - c.cacheCreation
+	cr := CacheResult{
+		CacheReadInputTokens:     c.cacheRead,
+		CacheCreationInputTokens: c.cacheCreation,
+		CacheCreation5mTokens:    c.cacheCreation5m,
+		CacheCreation1hTokens:    c.cacheCreation1h,
+	}.CapTo(inputTokens)
+	input := inputTokens - cr.CacheReadInputTokens - cr.CacheCreationInputTokens
 	if input < 0 {
 		input = 0
 	}
 	usage := map[string]any{"input_tokens": input, "output_tokens": outputTokens}
-	if c.hasCache {
-		usage["cache_read_input_tokens"] = c.cacheRead
-		usage["cache_creation_input_tokens"] = c.cacheCreation
+	if cr.CacheReadInputTokens > 0 || cr.CacheCreationInputTokens > 0 {
+		usage["cache_read_input_tokens"] = cr.CacheReadInputTokens
+		usage["cache_creation_input_tokens"] = cr.CacheCreationInputTokens
 		usage["cache_creation"] = map[string]any{
-			"ephemeral_5m_input_tokens": c.cacheCreation5m,
-			"ephemeral_1h_input_tokens": c.cacheCreation1h,
+			"ephemeral_5m_input_tokens": cr.CacheCreation5mTokens,
+			"ephemeral_1h_input_tokens": cr.CacheCreation1hTokens,
 		}
 	}
 	return usage
