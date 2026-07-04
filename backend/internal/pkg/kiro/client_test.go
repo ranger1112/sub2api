@@ -163,6 +163,54 @@ func TestBuildAPIRequest_APIKeyCredential(t *testing.T) {
 	}
 }
 
+func TestBuildAPIRequest_ExternalIdp(t *testing.T) {
+	cred := &Credentials{
+		AccessToken:  "ms-jwt-tok",
+		AuthMethod:   "external_idp",
+		ProfileArn:   "arn:aws:codewhisperer:us-east-1:123:profile/ABC",
+		RefreshToken: "rt",
+	}
+	req, err := BuildAPIRequest(context.Background(), cred, DefaultClientConfig(), []byte(`{"conversationState":{}}`))
+	if err != nil {
+		t.Fatalf("BuildAPIRequest: %v", err)
+	}
+	// 走 Kiro 运行时网关而非 AWS 直连
+	if req.URL.String() != "https://runtime.us-east-1.kiro.dev/" {
+		t.Fatalf("url = %s, want runtime.us-east-1.kiro.dev/", req.URL)
+	}
+	if req.Host != "runtime.us-east-1.kiro.dev" {
+		t.Fatalf("host = %s", req.Host)
+	}
+	checks := map[string]string{
+		"Authorization":   "Bearer ms-jwt-tok",
+		"Content-Type":    "application/x-amz-json-1.0",
+		"x-amz-target":    "KiroRuntimeService.GenerateAssistantResponse",
+		"amz-sdk-request": "attempt=1; max=3",
+	}
+	for k, want := range checks {
+		if got := req.Header.Get(k); got != want {
+			t.Fatalf("header %s = %q, want %q", k, got, want)
+		}
+	}
+	// TokenType 头须为确切大小写 EXTERNAL_IDP
+	if got := req.Header["TokenType"]; len(got) != 1 || got[0] != "EXTERNAL_IDP" {
+		t.Fatalf("TokenType header = %v, want [EXTERNAL_IDP]", got)
+	}
+	// User-Agent 使用 kiroruntime 标签
+	if !strings.Contains(req.Header.Get("User-Agent"), "api/kiroruntime#1.0.0") {
+		t.Fatalf("User-Agent = %q, want kiroruntime tag", req.Header.Get("User-Agent"))
+	}
+	// external_idp 生成须把 profileArn 注入请求体根对象(网关 runtimeservice 必填),
+	// 但不带 AWS 直连专属头。
+	body, _ := io.ReadAll(req.Body)
+	if got := gjson.GetBytes(body, "profileArn").String(); got != "arn:aws:codewhisperer:us-east-1:123:profile/ABC" {
+		t.Fatalf("external_idp must inject profileArn, got %q in %s", got, body)
+	}
+	if req.Header.Get("x-amzn-codewhisperer-optout") != "" {
+		t.Fatalf("external_idp must NOT set x-amzn-codewhisperer-optout")
+	}
+}
+
 func TestEffectiveRegions_Precedence(t *testing.T) {
 	cfg := ClientConfig{Region: "cfg-region", AuthRegion: "cfg-auth", APIRegion: "cfg-api"}
 	// 凭据级优先

@@ -128,6 +128,12 @@ func (c *Credentials) APIURL(cfg ClientConfig) string {
 // 设置全部伪装请求头并把 profileArn 注入请求体根对象。
 // 调用方负责用合适的 http.Client(代理 / TLS 指纹)执行返回的请求。
 func BuildAPIRequest(ctx context.Context, cred *Credentials, cfg ClientConfig, body []byte) (*http.Request, error) {
+	// external_idp(委托外部 IdP,如 Microsoft Entra)不走 AWS 直连,而是发往 Kiro
+	// 自有运行时网关 runtime.{region}.kiro.dev,由网关在服务端完成鉴权翻译。
+	if strings.EqualFold(cred.AuthMethod, "external_idp") {
+		return buildExternalIdpAPIRequest(ctx, cred, cfg, body)
+	}
+
 	apiRegion := cred.EffectiveAPIRegion(cfg)
 	host := "q." + apiRegion + ".amazonaws.com"
 	url := "https://" + host + "/generateAssistantResponse"
@@ -160,6 +166,52 @@ func BuildAPIRequest(ctx context.Context, cred *Credentials, cfg ClientConfig, b
 	if cred.IsAPIKeyCredential() {
 		h.Set("tokentype", "API_KEY")
 	}
+	return req, nil
+}
+
+// buildExternalIdpAPIRequest 为 external_idp 账号构造发往 Kiro 运行时网关的生成请求。
+//
+// 与 AWS 直连(q.{region}.amazonaws.com/generateAssistantResponse)不同,external_idp
+// 走 Kiro 自有网关 runtime.{region}.kiro.dev,采用 AWS JSON-1.0 协议(操作名放在
+// x-amz-target 头,路径为 "/"),并以 TokenType: EXTERNAL_IDP 头告知网关这是外部 IdP
+// (如 Microsoft Entra)令牌,由网关在服务端完成到 CodeWhisperer 的鉴权翻译。
+//
+// 请求体(conversationState)与响应(event-stream)与直连路径完全一致,故复用同一套
+// Convert / 序列化 / 流解析。profileArn 同样注入请求体根对象:网关的 runtimeservice
+// 对 GenerateAssistantResponse 要求 profileArn 为必填(缺失会 400 ValidationException
+// "profileArn is required for this request.")。
+func buildExternalIdpAPIRequest(ctx context.Context, cred *Credentials, cfg ClientConfig, body []byte) (*http.Request, error) {
+	region := cred.EffectiveAPIRegion(cfg)
+	host := "runtime." + region + ".kiro.dev"
+	url := "https://" + host + "/"
+	if cfg.apiURLOverride != "" {
+		url = cfg.apiURLOverride
+	}
+	machineID := MachineID(cred, cfg)
+	body = InjectProfileArn(body, cred.ProfileArn)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Host = host
+
+	xAmzUA := "aws-sdk-js/1.0.0 KiroIDE-" + cfg.kiroVersion() + "-" + machineID
+	userAgent := "aws-sdk-js/1.0.0 ua/2.1 os/" + cfg.systemVersion() +
+		" lang/js md/nodejs#" + cfg.nodeVersion() +
+		" api/kiroruntime#1.0.0 m/N KiroIDE-" + cfg.kiroVersion() + "-" + machineID
+
+	h := req.Header
+	h.Set("Content-Type", "application/x-amz-json-1.0")
+	h.Set("x-amz-target", "KiroRuntimeService.GenerateAssistantResponse")
+	h.Set("x-amz-user-agent", xAmzUA)
+	h.Set("User-Agent", userAgent)
+	h.Set("amz-sdk-invocation-id", newUUID())
+	h.Set("amz-sdk-request", "attempt=1; max=3")
+	h.Set("Authorization", "Bearer "+cred.BearerToken())
+	// 直接写 header map 以保留抓包观测到的确切大小写 "TokenType"(避免 canonical 化为
+	// "Tokentype");网关按大小写不敏感处理,但保持一致更稳妥。
+	req.Header["TokenType"] = []string{"EXTERNAL_IDP"}
 	return req, nil
 }
 
