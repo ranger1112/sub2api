@@ -12,6 +12,9 @@ func TestMapModel(t *testing.T) {
 		{"claude-sonnet-4.5", ModelSonnet45, true},
 		{"claude-sonnet-4-6", ModelSonnet46, true},
 		{"claude-sonnet-4.6", ModelSonnet46, true},
+		{"claude-sonnet-5", ModelSonnet5, true},
+		{"claude-sonnet-5-20250929", ModelSonnet5, true},
+		{"claude-sonnet-5-thinking", ModelSonnet5, true},
 		{"claude-opus-4-5-20251101", ModelOpus45, true},
 		{"claude-opus-4-6", ModelOpus46, true},
 		{"claude-opus-4-7", ModelOpus47, true},
@@ -36,7 +39,7 @@ func TestMapModel(t *testing.T) {
 }
 
 func TestContextWindowSize(t *testing.T) {
-	for _, m := range []string{"claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8"} {
+	for _, m := range []string{"claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8"} {
 		if got := ContextWindowSize(m); got != ContextWindowLarge {
 			t.Errorf("ContextWindowSize(%q) = %d, want %d", m, got, ContextWindowLarge)
 		}

@@ -6,6 +6,7 @@ import "strings"
 const (
 	ModelSonnet45 = "claude-sonnet-4.5"
 	ModelSonnet46 = "claude-sonnet-4.6"
+	ModelSonnet5  = "claude-sonnet-5"
 	ModelOpus45   = "claude-opus-4.5"
 	ModelOpus46   = "claude-opus-4.6"
 	ModelOpus47   = "claude-opus-4.7"
@@ -28,6 +29,7 @@ const DefaultThinkingSuffix = "-thinking"
 // 直接返回该静态集合,避免把 Kiro 不服务的 Claude 老模型暴露到下拉/映射里。
 func ServedModels() []string {
 	return []string{
+		ModelSonnet5,
 		ModelSonnet46,
 		ModelSonnet45,
 		ModelOpus48,
@@ -57,6 +59,11 @@ func MapModel(model string) (string, bool) {
 			return ModelSonnet46, true
 		case strings.Contains(m, "4-5") || strings.Contains(m, "4.5"):
 			return ModelSonnet45, true
+		// Sonnet 5(须紧邻 "sonnet" 以避开旧的 "claude-3-5-sonnet")。
+		case strings.Contains(m, "sonnet-5") || strings.Contains(m, "sonnet5") ||
+			strings.Contains(m, "sonnet.5") || strings.Contains(m, "sonnet 5") ||
+			strings.Contains(m, "sonnet_5"):
+			return ModelSonnet5, true
 		default:
 			return "", false
 		}
@@ -88,7 +95,7 @@ func ContextWindowSize(model string) int {
 		return ContextWindowDefault
 	}
 	switch mapped {
-	case ModelSonnet46, ModelOpus46, ModelOpus47, ModelOpus48:
+	case ModelSonnet5, ModelSonnet46, ModelOpus46, ModelOpus47, ModelOpus48:
 		return ContextWindowLarge
 	default:
 		return ContextWindowDefault
