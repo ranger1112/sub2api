@@ -192,9 +192,9 @@ func TestBuildAPIRequest_ExternalIdp(t *testing.T) {
 			t.Fatalf("header %s = %q, want %q", k, got, want)
 		}
 	}
-	// TokenType 头须为确切大小写 EXTERNAL_IDP
-	if got := req.Header["TokenType"]; len(got) != 1 || got[0] != "EXTERNAL_IDP" {
-		t.Fatalf("TokenType header = %v, want [EXTERNAL_IDP]", got)
+	// TokenType 头须为 EXTERNAL_IDP(头名大小写不敏感,用 Get 查)。
+	if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
+		t.Fatalf("TokenType header = %q, want EXTERNAL_IDP", got)
 	}
 	// User-Agent 使用 kiroruntime 标签
 	if !strings.Contains(req.Header.Get("User-Agent"), "api/kiroruntime#1.0.0") {

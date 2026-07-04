@@ -95,8 +95,8 @@ func TestBuildUsageLimitsRequest_ExternalIdp(t *testing.T) {
 	if req.Header.Get("Authorization") != "Bearer ms-jwt-tok" {
 		t.Fatalf("bearer = %q", req.Header.Get("Authorization"))
 	}
-	if got := req.Header["TokenType"]; len(got) != 1 || got[0] != "EXTERNAL_IDP" {
-		t.Fatalf("TokenType header = %v, want [EXTERNAL_IDP]", got)
+	if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
+		t.Fatalf("TokenType header = %q, want EXTERNAL_IDP", got)
 	}
 	if req.Header.Get("x-amzn-kiro-profile-arn") != "arn:aws:codewhisperer:us-east-1:123:profile/ABC" {
 		t.Fatalf("missing x-amzn-kiro-profile-arn header")

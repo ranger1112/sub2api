@@ -209,9 +209,8 @@ func buildExternalIdpAPIRequest(ctx context.Context, cred *Credentials, cfg Clie
 	h.Set("amz-sdk-invocation-id", newUUID())
 	h.Set("amz-sdk-request", "attempt=1; max=3")
 	h.Set("Authorization", "Bearer "+cred.BearerToken())
-	// 直接写 header map 以保留抓包观测到的确切大小写 "TokenType"(避免 canonical 化为
-	// "Tokentype");网关按大小写不敏感处理,但保持一致更稳妥。
-	req.Header["TokenType"] = []string{"EXTERNAL_IDP"}
+	// HTTP 头名大小写不敏感(HTTP/2 更会统一小写),用规范 Set 即可(canonical "Tokentype")。
+	h.Set("TokenType", "EXTERNAL_IDP")
 	return req, nil
 }
 

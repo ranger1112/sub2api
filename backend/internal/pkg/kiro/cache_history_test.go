@@ -13,74 +13,47 @@ import (
 // 把 cache_read 钉死在静态前缀、cache_creation 恒 0,历史每轮被错报为全新 input(约 4x 超计费)。
 // 修复后兜底 total 改用段链自身 token 之和(覆盖工具内容),cache_read 应随历史逐轮增长、
 // 且每轮有非零 cache_creation。
+//
+// 用原始 JSON 字符串构造请求体(而非 map[string]any),避免大量类型断言。
 func TestCacheTracker_ToolHeavyHistoryGrows(t *testing.T) {
-	system := []any{map[string]any{
-		"type": "text", "text": strings.Repeat("Coding agent system. ", 200),
-		"cache_control": map[string]any{"type": "ephemeral"},
-	}}
-	tools := []any{
-		map[string]any{"name": "read", "description": strings.Repeat("read file. ", 200),
-			"input_schema": map[string]any{"type": "object"},
-			"cache_control": map[string]any{"type": "ephemeral"}},
-	}
-
-	stripCC := func(msgs []any) []any {
-		out := make([]any, len(msgs))
-		for i, h := range msgs {
-			hm := h.(map[string]any)
-			blocks := hm["content"].([]any)
-			nb := make([]any, len(blocks))
-			for j, b := range blocks {
-				cp := map[string]any{}
-				for k, v := range b.(map[string]any) {
-					if k != "cache_control" {
-						cp[k] = v
-					}
-				}
-				nb[j] = cp
-			}
-			out[i] = map[string]any{"role": hm["role"], "content": nb}
-		}
-		return out
-	}
+	system := `[{"type":"text","text":"` + strings.Repeat("Coding agent system. ", 200) +
+		`","cache_control":{"type":"ephemeral"}}]`
+	tools := `[{"name":"read","description":"` + strings.Repeat("read file. ", 200) +
+		`","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral"}}]`
+	fileContent := strings.Repeat("file line. ", 400)
 
 	tracker := NewCacheTracker()
 	const cred = int64(1)
-	var history []any
+	var msgs []string // 历史消息(不带 cache_control)
 	var reads []CacheResult
 
 	for turn := 1; turn <= 3; turn++ {
 		if turn > 1 {
 			tid := fmt.Sprintf("toolu_%02d", turn-1)
-			history = append(history,
-				map[string]any{"role": "assistant", "content": []any{
-					map[string]any{"type": "tool_use", "id": tid, "name": "read", "input": map[string]any{"path": "/x.go"}},
-				}},
-				// tool_result 携带大量文件内容:真实历史主体,但 processMessageContent 计为 0 text。
-				map[string]any{"role": "user", "content": []any{
-					map[string]any{"type": "tool_result", "tool_use_id": tid, "content": strings.Repeat("file line. ", 400)},
-				}},
+			// assistant 发起 tool_use;user 回带大量文件内容的 tool_result(历史主体)。
+			msgs = append(msgs,
+				fmt.Sprintf(`{"role":"assistant","content":[{"type":"tool_use","id":%q,"name":"read","input":{"path":"/x.go"}}]}`, tid),
+				fmt.Sprintf(`{"role":"user","content":[{"type":"tool_result","tool_use_id":%q,"content":%q}]}`, tid, fileContent),
 			)
 		}
-		history = append(history, map[string]any{"role": "user", "content": []any{
-			map[string]any{"type": "text", "text": fmt.Sprintf("turn %d", turn)},
-		}})
+		msgs = append(msgs, fmt.Sprintf(`{"role":"user","content":[{"type":"text","text":"turn %d"}]}`, turn))
 
-		msgs := stripCC(history)
-		last := msgs[len(msgs)-1].(map[string]any)["content"].([]any)
-		last[len(last)-1].(map[string]any)["cache_control"] = map[string]any{"type": "ephemeral"}
+		// rolling cache_control:只在最后一条 user 上打断点(替换其无断点版本)。
+		withCC := make([]string, len(msgs))
+		copy(withCC, msgs)
+		withCC[len(withCC)-1] = fmt.Sprintf(
+			`{"role":"user","content":[{"type":"text","text":"turn %d","cache_control":{"type":"ephemeral"}}]}`, turn)
 
-		body, _ := json.Marshal(map[string]any{
-			"model": "claude-sonnet-4-5", "max_tokens": 512,
-			"system": system, "tools": tools, "messages": msgs,
-		})
+		body := []byte(fmt.Sprintf(
+			`{"model":"claude-sonnet-4-5","max_tokens":512,"system":%s,"tools":%s,"messages":[%s]}`,
+			system, tools, strings.Join(withCC, ",")))
+
 		var req AnthropicRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
 		p := tracker.BuildProfile(&req, body, 0)
-		res := tracker.Compute(cred, p)
-		reads = append(reads, res)
+		reads = append(reads, tracker.Compute(cred, p))
 		tracker.Update(cred, p)
 	}
 

@@ -102,8 +102,8 @@ func buildExternalIdpUsageLimitsRequest(ctx context.Context, cred *Credentials, 
 	if cred.ProfileArn != "" {
 		h.Set("x-amzn-kiro-profile-arn", cred.ProfileArn)
 	}
-	// 保留抓包观测到的确切大小写 TokenType(避免 canonical 化为 "Tokentype")。
-	req.Header["TokenType"] = []string{"EXTERNAL_IDP"}
+	// HTTP 头名大小写不敏感(HTTP/2 统一小写),规范 Set 即可。
+	h.Set("TokenType", "EXTERNAL_IDP")
 	return req, nil
 }
 
