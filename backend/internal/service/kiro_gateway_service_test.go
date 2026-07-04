@@ -44,7 +44,7 @@ func (r *kiroErrRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 
 func newKiroServiceWithRT(rt http.RoundTripper) *KiroGatewayService {
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
-	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig())
+	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker())
 }
 
 // kiroTestFrame 构造一个可被 pkg/kiro 解码的 AWS Event Stream 帧(用于伪造上游响应)。
@@ -75,7 +75,7 @@ func kiroTestFrame(eventType, payload string) []byte {
 func newKiroGatewayServiceForTest(body string) *KiroGatewayService {
 	rt := &kiroFakeRoundTripper{status: 200, body: body}
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
-	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig())
+	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker())
 }
 
 func kiroAPIKeyAccount() *Account {

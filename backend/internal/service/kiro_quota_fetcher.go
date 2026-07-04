@@ -208,7 +208,7 @@ func (f *KiroQuotaFetcher) TestGenerate(ctx context.Context, account *Account, p
 			{Role: "user", Content: json.RawMessage(`"hi"`)},
 		},
 	}
-	msg, _, callErr := kiro.CollectMessages(callCtx, client, &cred, f.cfg, req)
+	msg, _, callErr := kiro.CollectMessages(callCtx, client, &cred, f.cfg, req, nil) // 测试连接不模拟缓存
 	if callErr != nil {
 		var ue *kiro.UpstreamError
 		if errors.As(callErr, &ue) {

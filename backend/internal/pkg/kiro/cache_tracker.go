@@ -131,6 +131,9 @@ func NewCacheTracker() *CacheTracker {
 // cache_control 断点,因为 kiro 内部类型不保留该字段);totalInputTokens 是本次
 // prompt 的真实/估算 total(cache_read/creation 会 cap 到它以内)。
 func (t *CacheTracker) BuildProfile(req *AnthropicRequest, rawBody []byte, totalInputTokens int) *CacheProfile {
+	if totalInputTokens <= 0 {
+		totalInputTokens = estimateInputTokens(req)
+	}
 	segments := flattenCacheSegments(rawBody)
 
 	prelude := cachePrelude(req)

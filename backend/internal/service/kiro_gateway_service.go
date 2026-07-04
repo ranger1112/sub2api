@@ -22,13 +22,19 @@ type KiroGatewayService struct {
 	tokenProvider *KiroTokenProvider
 	clientFor     KiroHTTPClientFactory
 	cfg           kiro.ClientConfig
+	cacheTracker  *kiro.CacheTracker
 }
 
-func NewKiroGatewayService(tokenProvider *KiroTokenProvider, clientFor KiroHTTPClientFactory, cfg kiro.ClientConfig) *KiroGatewayService {
+func NewKiroGatewayService(tokenProvider *KiroTokenProvider, clientFor KiroHTTPClientFactory, cfg kiro.ClientConfig, cacheTracker *kiro.CacheTracker) *KiroGatewayService {
 	if clientFor == nil {
 		clientFor = func(string) (*http.Client, error) { return http.DefaultClient, nil }
 	}
-	return &KiroGatewayService{tokenProvider: tokenProvider, clientFor: clientFor, cfg: cfg}
+	return &KiroGatewayService{tokenProvider: tokenProvider, clientFor: clientFor, cfg: cfg, cacheTracker: cacheTracker}
+}
+
+// ProvideKiroCacheTracker 提供进程级单例的合成提示词缓存追踪器(wire）。
+func ProvideKiroCacheTracker() *kiro.CacheTracker {
+	return kiro.NewCacheTracker()
 }
 
 // Forward 处理一次请求。streaming 请求把 Anthropic SSE 写入 c.Writer;
@@ -62,6 +68,17 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		return nil, err
 	}
 
+	// 合成提示词缓存(路线①:注入客户端 usage 且进 token 计费,与真实 credit 双轨)。
+	// 请求前只读 Compute,上游成功后再 Update,避免失败请求污染本地缓存表。
+	var cacheProfile *kiro.CacheProfile
+	var cacheRes kiro.CacheResult
+	var cachePtr *kiro.CacheResult
+	if s.cacheTracker != nil {
+		cacheProfile = s.cacheTracker.BuildProfile(&req, body, 0)
+		cacheRes = s.cacheTracker.Compute(account.ID, cacheProfile)
+		cachePtr = &cacheRes
+	}
+
 	// 记录 Forward 前已写入字节数,用于 pre-first-byte 不变量判定:
 	// 一旦已向客户端写出 SSE 字节,禁止 failover(避免流拼接腐化),与 handler 的
 	// writerSizeBeforeForward 保持一致。
@@ -73,7 +90,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		h.Set("Cache-Control", "no-cache")
 		h.Set("Connection", "keep-alive")
 		h.Set("X-Accel-Buffering", "no") // 禁止 nginx 等反代缓冲,保证实时流
-		res, streamErr := kiro.StreamMessages(ctx, client, &cred, s.cfg, &req, c.Writer)
+		res, streamErr := kiro.StreamMessages(ctx, client, &cred, s.cfg, &req, c.Writer, cachePtr)
 		if streamErr != nil {
 			// 可重试上游错误(429/5xx/连接级)且首字节前:返回 failover 让 handler 跨账号重试。
 			if failoverErr := s.forwardUpstreamFailover(c, account, streamErr, writerSizeBefore); failoverErr != nil {
@@ -87,23 +104,29 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 			// 首字节前失败(如客户端类 4xx):SSE 头尚未提交,改写为带真实上游状态的 JSON 错误。
 			// 若流已开始,writeUpstreamError 会自行 no-op,交由上层追加 SSE error 事件。
 			s.writeUpstreamError(c, streamErr)
+		} else if cacheProfile != nil {
+			// 上游成功:把本轮可缓存前缀写入缓存表,供后续轮次命中。
+			s.cacheTracker.Update(account.ID, cacheProfile)
 		}
-		return s.buildForwardResult(req.Model, res, true, start), streamErr
+		return s.buildForwardResult(req.Model, res, true, start, cacheRes), streamErr
 	}
 
-	msg, res, err := kiro.CollectMessages(ctx, client, &cred, s.cfg, &req)
+	msg, res, err := kiro.CollectMessages(ctx, client, &cred, s.cfg, &req, cachePtr)
 	if err != nil {
 		if failoverErr := s.forwardUpstreamFailover(c, account, err, writerSizeBefore); failoverErr != nil {
 			return nil, failoverErr
 		}
 		s.writeUpstreamError(c, err)
-		return s.buildForwardResult(req.Model, res, false, start), err
+		return s.buildForwardResult(req.Model, res, false, start, cacheRes), err
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	if encErr := json.NewEncoder(c.Writer).Encode(msg); encErr != nil {
-		return s.buildForwardResult(req.Model, res, false, start), encErr
+		return s.buildForwardResult(req.Model, res, false, start, cacheRes), encErr
 	}
-	return s.buildForwardResult(req.Model, res, false, start), nil
+	if cacheProfile != nil {
+		s.cacheTracker.Update(account.ID, cacheProfile)
+	}
+	return s.buildForwardResult(req.Model, res, false, start, cacheRes), nil
 }
 
 // writeUpstreamError 在尚未写出任何响应体时,把 Kiro 上游错误改写为 Anthropic 风格的 JSON 错误,
@@ -280,15 +303,28 @@ func kiroErrorType(status int) string {
 	}
 }
 
-func (s *KiroGatewayService) buildForwardResult(requestedModel string, res *kiro.StreamResult, stream bool, start time.Time) *ForwardResult {
+func (s *KiroGatewayService) buildForwardResult(requestedModel string, res *kiro.StreamResult, stream bool, start time.Time, cache kiro.CacheResult) *ForwardResult {
 	fr := &ForwardResult{Stream: stream, Duration: time.Since(start), Model: requestedModel}
 	if res != nil {
-		fr.Usage = ClaudeUsage{InputTokens: res.InputTokens, OutputTokens: res.OutputTokens}
+		// input 扣掉合成缓存部分(input = total − read − creation,互斥,避免重复计费);
+		// 与注入客户端 SSE 的 message_delta.usage 口径一致。
+		input := res.InputTokens - cache.CacheReadInputTokens - cache.CacheCreationInputTokens
+		if input < 0 {
+			input = 0
+		}
+		fr.Usage = ClaudeUsage{
+			InputTokens:              input,
+			OutputTokens:             res.OutputTokens,
+			CacheReadInputTokens:     cache.CacheReadInputTokens,
+			CacheCreationInputTokens: cache.CacheCreationInputTokens,
+			CacheCreation5mTokens:    cache.CacheCreation5mTokens,
+			CacheCreation1hTokens:    cache.CacheCreation1hTokens,
+		}
 		if res.Model != "" && res.Model != requestedModel {
 			fr.UpstreamModel = res.Model
 		}
 		// Kiro 唯一的真实成本口径是 credit(meteringEvent.usage);token 数只能估算。
-		// 记录真实 credit 消耗供观测/后续计费(用量面板/计费落库为后续项)。
+		// 记录真实 credit 消耗供观测/计费落库(用量面板落库见 usage-log kiro_credit_usage)。
 		if res.CreditUsage > 0 {
 			slog.Info("kiro.request_credit_usage",
 				"model", requestedModel,
@@ -296,6 +332,8 @@ func (s *KiroGatewayService) buildForwardResult(requestedModel string, res *kiro
 				"credit_usage", res.CreditUsage,
 				"est_input_tokens", res.InputTokens,
 				"output_tokens", res.OutputTokens,
+				"cache_read_tokens", cache.CacheReadInputTokens,
+				"cache_creation_tokens", cache.CacheCreationInputTokens,
 				"stream", stream,
 			)
 		}

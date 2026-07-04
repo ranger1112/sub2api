@@ -77,7 +77,7 @@ func TestStreamMessages_EndToEnd(t *testing.T) {
 	}
 
 	var sink strings.Builder
-	res, err := StreamMessages(context.Background(), srv.Client(), cred, cfg, req, &sink)
+	res, err := StreamMessages(context.Background(), srv.Client(), cred, cfg, req, &sink, nil)
 	if err != nil {
 		t.Fatalf("StreamMessages: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestCollectMessages_EndToEnd(t *testing.T) {
 	req := &AnthropicRequest{}
 	_ = json.Unmarshal([]byte(`{"model":"claude-sonnet-4-5","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`), req)
 
-	msg, res, err := CollectMessages(context.Background(), srv.Client(), cred, cfg, req)
+	msg, res, err := CollectMessages(context.Background(), srv.Client(), cred, cfg, req, nil)
 	if err != nil {
 		t.Fatalf("CollectMessages: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestStreamMessages_UpstreamError(t *testing.T) {
 	_ = json.Unmarshal([]byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"messages":[{"role":"user","content":"x"}]}`), req)
 
 	var sink strings.Builder
-	_, err := StreamMessages(context.Background(), srv.Client(), cred, cfg, req, &sink)
+	_, err := StreamMessages(context.Background(), srv.Client(), cred, cfg, req, &sink, nil)
 	ue, ok := err.(*UpstreamError)
 	if !ok {
 		t.Fatalf("err = %v, want *UpstreamError", err)
@@ -235,7 +235,7 @@ func TestStreamMessages_TruncatedStreamErrors(t *testing.T) {
 	_ = json.Unmarshal([]byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"messages":[{"role":"user","content":"x"}]}`), req)
 
 	var sink strings.Builder
-	res, err := StreamMessages(context.Background(), srv.Client(), cred, cfg, req, &sink)
+	res, err := StreamMessages(context.Background(), srv.Client(), cred, cfg, req, &sink, nil)
 	var incomplete *eventstream.IncompleteFrameError
 	if !errors.As(err, &incomplete) {
 		t.Fatalf("expected IncompleteFrameError (truncation), got %v", err)
@@ -253,7 +253,7 @@ func TestStreamMessages_UnsupportedModel(t *testing.T) {
 	req := &AnthropicRequest{}
 	_ = json.Unmarshal([]byte(`{"model":"gpt-4","max_tokens":10,"messages":[{"role":"user","content":"x"}]}`), req)
 	var sink strings.Builder
-	_, err := StreamMessages(context.Background(), http.DefaultClient, &Credentials{AccessToken: "t"}, DefaultClientConfig(), req, &sink)
+	_, err := StreamMessages(context.Background(), http.DefaultClient, &Credentials{AccessToken: "t"}, DefaultClientConfig(), req, &sink, nil)
 	if _, ok := err.(*UnsupportedModelError); !ok {
 		t.Fatalf("err = %v, want *UnsupportedModelError (before any upstream call)", err)
 	}

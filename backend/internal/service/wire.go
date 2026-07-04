@@ -601,6 +601,7 @@ var ProviderSet = wire.NewSet(
 	NewAntigravityGatewayService,
 	NewKiroOAuthService,
 	ProvideKiroTokenProvider,
+	ProvideKiroCacheTracker,
 	NewKiroGatewayService,
 	NewKiroQuotaFetcher,
 	NewKiroQuotaService,
