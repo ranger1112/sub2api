@@ -8,6 +8,8 @@
        - 用命令行:kiro-cli login --use-device-flow(无需 IDE,浏览器点一下授权即可)
   2) 跑一条命令:  python tools/kiro-import.py
      (Windows 也可双击 tools/kiro-import.bat)
+     导线上服务用交互模式(提示输入地址/管理员/密码等,密码不回显):
+        python tools/kiro-import.py -i
 
 它会:
   - 读 ~/.aws/sso/cache/ 下的 kiro-auth-token.json(IDE)或 device-sso-lsp-token.json(CLI),
@@ -28,6 +30,7 @@
                          profileArn 的区自动设(如 eu-central-1),覆盖 token 里可能缺失的 region。
   KIRO_LOG_DIR           Kiro IDE 日志根目录(默认按 OS 自动找:Windows %APPDATA%\\Kiro\\logs 等)
 """
+import getpass
 import json
 import os
 import re
@@ -44,6 +47,7 @@ CACHE_DIR = os.environ.get("KIRO_CACHE_DIR", os.path.join(os.path.expanduser("~"
 # external_idp 专用:profile_arn 不在 token 文件里(生成必需)。显式给,或从 Kiro 日志自动识别。
 PROFILE_ARN = os.environ.get("KIRO_PROFILE_ARN", "").strip()
 LOG_DIR = os.environ.get("KIRO_LOG_DIR", "").strip()
+INTERACTIVE = False  # -i / --interactive:运行时交互输入(覆盖上面的默认)
 
 
 def die(msg):
@@ -166,10 +170,19 @@ def _resolve_external_idp_profile():
         if len(arns) == 1:
             prof = arns[0]
             print("· 从 Kiro 日志识别到 profileArn:%s" % prof)
+        elif len(arns) > 1 and INTERACTIVE:
+            print("Kiro 日志里发现多个 profileArn,请选择这个账号对应的:")
+            for i, a in enumerate(arns, 1):
+                print("  %d) %s" % (i, a))
+            sel = input("序号 [1]: ").strip() or "1"
+            try:
+                prof = arns[int(sel) - 1]
+            except (ValueError, IndexError):
+                die("无效选择:%r" % sel)
         elif len(arns) > 1:
             die("external_idp 需要 profile_arn,但 Kiro 日志里发现多个,无法自动确定:\n"
                 + "\n".join("    " + a for a in arns)
-                + "\n  → 用 KIRO_PROFILE_ARN=<正确的那个> 重跑。")
+                + "\n  → 用 KIRO_PROFILE_ARN=<正确的那个> 重跑,或加 -i 交互选择。")
         else:
             die("external_idp 需要 profile_arn(生成必需),但没自动找到。\n"
                 "  → 在 Kiro 日志里搜 profileArn(如 %APPDATA%\\Kiro\\logs\\...\\kiro.kiroAgent\\*.log),\n"
@@ -258,9 +271,37 @@ def read_credentials():
     return creds, "%s(%s)" % (src_name, kind)
 
 
+def prompt_config():
+    """交互式覆盖连接/账号参数(密码用 getpass 不回显);直接回车保留方括号里的默认值。"""
+    global BASE, ADMIN_EMAIL, ADMIN_PASSWORD, ACCOUNT_NAME, GROUP_ID
+    print("== 交互模式:回车用方括号里的默认值 ==\n")
+
+    def ask(prompt, default):
+        return input("%s [%s]: " % (prompt, default)).strip() or default
+
+    BASE = ask("线上 sub2api 地址", BASE).rstrip("/")
+    ADMIN_EMAIL = ask("管理员邮箱", ADMIN_EMAIL)
+    pw = getpass.getpass("管理员密码 (回车保留默认): ").strip()
+    if pw:
+        ADMIN_PASSWORD = pw
+    ACCOUNT_NAME = ask("账号在 sub2api 里的名字 (upsert 匹配)", ACCOUNT_NAME)
+    gid = ask("绑定分组 ID", str(GROUP_ID))
+    try:
+        GROUP_ID = int(gid)
+    except ValueError:
+        die("分组 ID 必须是数字:%r" % gid)
+    print()
+
+
 def main():
+    global INTERACTIVE
+    if any(a in ("-i", "--interactive") for a in sys.argv[1:]):
+        INTERACTIVE = True
+        prompt_config()
+
     creds, label = read_credentials()
     print("读到本地 Kiro 凭据:%s;字段=%s" % (label, ",".join(sorted(creds.keys()))))
+    print("目标 sub2api:%s(管理员 %s,分组 %d,账号名 %s)" % (BASE, ADMIN_EMAIL, GROUP_ID, ACCOUNT_NAME))
 
     st, resp = api("POST", "/api/v1/auth/login", body={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     token = (resp.get("data") or {}).get("access_token")
