@@ -25,6 +25,7 @@ func TestNormalizeTier(t *testing.T) {
 		{name: "free-tier", raw: "free-tier", expected: "FREE"},
 		{name: "g1-pro-tier", raw: "g1-pro-tier", expected: "PRO"},
 		{name: "g1-ultra-tier", raw: "g1-ultra-tier", expected: "ULTRA"},
+		{name: "kiro power = top tier", raw: "KIRO POWER", expected: "ULTRA"},
 		{name: "unknown-something", raw: "unknown-something", expected: "UNKNOWN"},
 		{name: "Google AI Pro contains pro keyword", raw: "Google AI Pro", expected: "PRO"},
 		{name: "case insensitive FREE", raw: "FREE-TIER", expected: "FREE"},

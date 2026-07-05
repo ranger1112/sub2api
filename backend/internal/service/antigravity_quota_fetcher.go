@@ -114,7 +114,8 @@ func normalizeTier(raw string) string {
 	}
 	lower := strings.ToLower(raw)
 	switch {
-	case strings.Contains(lower, "ultra"):
+	case strings.Contains(lower, "ultra"), strings.Contains(lower, "power"):
+		// Kiro 顶档 "KIRO POWER" 归一化为顶档(与 Antigravity Ultra 同色)。
 		return "ULTRA"
 	case strings.Contains(lower, "pro"):
 		return "PRO"
