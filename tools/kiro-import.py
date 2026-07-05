@@ -23,9 +23,14 @@
   KIRO_ACCOUNT_NAME      默认 kiro-local(账号在 sub2api 里的名字,用于 upsert 匹配)
   KIRO_GROUP_ID          默认 1(绑定的分组;Kiro 挂在 anthropic 分组下)
   KIRO_CACHE_DIR         默认 ~/.aws/sso/cache
+  KIRO_PROFILE_ARN       external_idp 专用:profile_arn 不在 token 文件里(生成必需)。不设则
+                         从 Kiro 日志自动识别;日志里有多个账号时会让你显式指定。region 会按
+                         profileArn 的区自动设(如 eu-central-1),覆盖 token 里可能缺失的 region。
+  KIRO_LOG_DIR           Kiro IDE 日志根目录(默认按 OS 自动找:Windows %APPDATA%\\Kiro\\logs 等)
 """
 import json
 import os
+import re
 import sys
 import urllib.request
 import urllib.error
@@ -36,6 +41,9 @@ ADMIN_PASSWORD = os.environ.get("SUB2API_ADMIN_PASSWORD", "admin123")
 ACCOUNT_NAME = os.environ.get("KIRO_ACCOUNT_NAME", "kiro-local")
 GROUP_ID = int(os.environ.get("KIRO_GROUP_ID", "1"))
 CACHE_DIR = os.environ.get("KIRO_CACHE_DIR", os.path.join(os.path.expanduser("~"), ".aws", "sso", "cache"))
+# external_idp 专用:profile_arn 不在 token 文件里(生成必需)。显式给,或从 Kiro 日志自动识别。
+PROFILE_ARN = os.environ.get("KIRO_PROFILE_ARN", "").strip()
+LOG_DIR = os.environ.get("KIRO_LOG_DIR", "").strip()
 
 
 def die(msg):
@@ -105,6 +113,72 @@ def _find_registration(client_id_hash):
     return "", ""
 
 
+_PROFILE_ARN_RE = re.compile(r"arn:aws:codewhisperer:[a-z0-9-]+:[0-9]+:profile/[A-Za-z0-9]+")
+
+
+def _kiro_log_dirs():
+    """Kiro IDE 日志根目录(按 OS);KIRO_LOG_DIR 可覆盖。"""
+    dirs = []
+    if LOG_DIR:
+        dirs.append(LOG_DIR)
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        dirs.append(os.path.join(appdata, "Kiro", "logs"))          # Windows
+    home = os.path.expanduser("~")
+    dirs.append(os.path.join(home, "Library", "Application Support", "Kiro", "logs"))  # macOS
+    dirs.append(os.path.join(home, ".config", "Kiro", "logs"))      # Linux
+    return [d for d in dirs if os.path.isdir(d)]
+
+
+def _discover_profile_arns():
+    """从最新的 Kiro 会话日志里提取去重后的 profileArn 列表(profileArn 不在 token 文件里,
+    但每次 getUsageLimits/生成都会写进日志)。只扫最新的一两个会话目录,避免翻到旧账号。"""
+    for root in _kiro_log_dirs():
+        try:
+            subs = [os.path.join(root, d) for d in os.listdir(root)]
+        except OSError:
+            continue
+        subs = sorted((d for d in subs if os.path.isdir(d)), key=os.path.getmtime, reverse=True)
+        for sd in subs[:2]:
+            arns = []
+            for dp, _dn, files in os.walk(sd):
+                for fn in files:
+                    if not fn.lower().endswith((".log", ".txt")):
+                        continue
+                    try:
+                        with open(os.path.join(dp, fn), encoding="utf-8", errors="ignore") as f:
+                            text = f.read()
+                    except OSError:
+                        continue
+                    for m in _PROFILE_ARN_RE.finditer(text):
+                        if m.group(0) not in arns:
+                            arns.append(m.group(0))
+            if arns:
+                return arns
+    return []
+
+
+def _resolve_external_idp_profile():
+    """确定 external_idp 的 (profile_arn, region)。KIRO_PROFILE_ARN 优先,否则从 Kiro 日志识别。"""
+    prof = PROFILE_ARN
+    if not prof:
+        arns = _discover_profile_arns()
+        if len(arns) == 1:
+            prof = arns[0]
+            print("· 从 Kiro 日志识别到 profileArn:%s" % prof)
+        elif len(arns) > 1:
+            die("external_idp 需要 profile_arn,但 Kiro 日志里发现多个,无法自动确定:\n"
+                + "\n".join("    " + a for a in arns)
+                + "\n  → 用 KIRO_PROFILE_ARN=<正确的那个> 重跑。")
+        else:
+            die("external_idp 需要 profile_arn(生成必需),但没自动找到。\n"
+                "  → 在 Kiro 日志里搜 profileArn(如 %APPDATA%\\Kiro\\logs\\...\\kiro.kiroAgent\\*.log),\n"
+                "     再用 KIRO_PROFILE_ARN=arn:aws:codewhisperer:<region>:<acct>:profile/<id> 重跑。")
+    parts = prof.split(":")
+    region = parts[3] if len(parts) > 3 and parts[3] else ""
+    return prof, region
+
+
 def read_credentials():
     # 优先级找 token 文件:IDE(kiro-auth-token.json) / CLI(device-sso-lsp-token.json);都在取最近修改的。
     candidates = [
@@ -155,6 +229,11 @@ def read_credentials():
         client_secret = _first(tok, "clientSecret", "client_secret")
         if client_secret:
             creds["client_secret"] = client_secret
+        # profile_arn(生成必需,不在 token 文件里)+ region(以 profileArn 的区为准,覆盖 token 里的)。
+        prof, region = _resolve_external_idp_profile()
+        creds["profile_arn"] = prof
+        if region:
+            creds["region"] = region
         kind = "external_idp(外部 IdP / 如 Microsoft Entra)"
         return creds, "%s(%s)" % (src_name, kind)
 
