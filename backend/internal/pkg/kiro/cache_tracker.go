@@ -47,6 +47,9 @@ type CacheResult struct {
 	CacheCreationInputTokens int
 	CacheCreation5mTokens    int
 	CacheCreation1hTokens    int
+	// PromptTotalEstimate 是本次 prompt 的「估算 total」(段链 ΣestimateTokens),由 Compute
+	// 回填,仅供 Reconcile 做量纲对齐,不注入客户端 usage。>0 才启用等比缩放。
+	PromptTotalEstimate int
 }
 
 // CapTo 把合成缓存计数夹到真实 total 以内(保证 read+creation ≤ total),按比例缩放并
@@ -71,6 +74,61 @@ func (r CacheResult) CapTo(total int) CacheResult {
 		c5m = r.CacheCreation5mTokens * creation / r.CacheCreationInputTokens
 		c1h = creation - c5m
 	}
+	return CacheResult{
+		CacheReadInputTokens:     read,
+		CacheCreationInputTokens: creation,
+		CacheCreation5mTokens:    c5m,
+		CacheCreation1hTokens:    c1h,
+	}
+}
+
+// Reconcile 把按 estimate 前缀算出的合成缓存计数,按「真实 total ÷ 估算 total」等比缩放到
+// 真实计费口径,使 read+creation 随真值同步伸缩、read+creation+input 恒等于 realTotal 且
+// 保持三者占比不变。
+//
+// 为什么需要它:read/creation 由 estimateTokens(非中文≈4 字符/token)算出的前缀累计得到,
+// 而 realTotal 来自 Kiro 的 contextUsagePercentage × 上下文窗口——两套口径量纲不同:
+// estimateTokens 对 code/JSON(工具调用/结果占主导的 coding-agent 历史)系统性低估约
+// 1.3–1.5×。老的 CapTo 只在 read+creation 超过 realTotal 时按比例夹小,realTotal 更大(常态)
+// 时什么都不做,于是量纲差(可达数万 token)被 input = realTotal−read−creation 整块吸收,
+// 账面命中率被严重压低(实测 ~67% vs Claude 缓存应有的 ~95%)。Reconcile 用估算 total 作分母
+// 等比放大 read/creation:cached 前缀占估算 total 多少比例,就占 realTotal 同样比例,量纲差
+// 被吸收进缓存而非 input。因 read+creation = 前缀累计 ≤ 估算 total,缩放后必 ≤ realTotal,
+// input 恒 ≥ 0。
+//
+// PromptTotalEstimate<=0(单元测试直接构造 CacheResult、无 profile 等场景)时退化为 CapTo,
+// 保持旧语义。
+func (r CacheResult) Reconcile(realTotal int) CacheResult {
+	if realTotal < 0 {
+		realTotal = 0
+	}
+	est := r.PromptTotalEstimate
+	if est <= 0 {
+		return r.CapTo(realTotal)
+	}
+	scale := func(v int) int {
+		if v <= 0 {
+			return 0
+		}
+		return int(int64(v) * int64(realTotal) / int64(est))
+	}
+	read := scale(r.CacheReadInputTokens)
+	creation := scale(r.CacheCreationInputTokens)
+	// 理论上 read+creation = 前缀累计 ≤ est ⇒ 缩放后 ≤ realTotal;取整误差兜底再夹一次。
+	if read+creation > realTotal {
+		return CacheResult{
+			CacheReadInputTokens:     read,
+			CacheCreationInputTokens: creation,
+			CacheCreation5mTokens:    scale(r.CacheCreation5mTokens),
+			CacheCreation1hTokens:    scale(r.CacheCreation1hTokens),
+		}.CapTo(realTotal)
+	}
+	// 5m/1h 是 creation 的子项:5m 等比缩放,1h 取残差以保证 5m+1h == creation(不引入取整漂移)。
+	c5m := scale(r.CacheCreation5mTokens)
+	if c5m > creation {
+		c5m = creation
+	}
+	c1h := creation - c5m
 	return CacheResult{
 		CacheReadInputTokens:     read,
 		CacheCreationInputTokens: creation,
@@ -234,7 +292,7 @@ func (t *CacheTracker) BuildProfile(req *AnthropicRequest, rawBody []byte, total
 func (t *CacheTracker) Compute(credentialID int64, p *CacheProfile) CacheResult {
 	last, ok := p.lastCacheableBreakpoint()
 	if !ok {
-		return CacheResult{}
+		return CacheResult{PromptTotalEstimate: p.totalInputTokens}
 	}
 	lastTokens := min(last.cumulativeTokens, p.totalInputTokens)
 
@@ -259,6 +317,7 @@ func (t *CacheTracker) Compute(credentialID int64, p *CacheProfile) CacheResult 
 			CacheCreationInputTokens: lastTokens,
 			CacheCreation5mTokens:    c5m,
 			CacheCreation1hTokens:    c1h,
+			PromptTotalEstimate:      p.totalInputTokens,
 		}
 	}
 
@@ -281,6 +340,7 @@ func (t *CacheTracker) Compute(credentialID int64, p *CacheProfile) CacheResult 
 		CacheCreationInputTokens: newTokens,
 		CacheCreation5mTokens:    c5m,
 		CacheCreation1hTokens:    c1h,
+		PromptTotalEstimate:      p.totalInputTokens,
 	}
 }
 

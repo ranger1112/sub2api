@@ -323,10 +323,11 @@ type StreamContext struct {
 	CreditUnit         string  // meteringEvent.unit(通常 "credit"),随 CreditUsage 透传给客户端
 
 	// 合成提示词缓存计数(由网关经 CacheTracker 算出后 SetCache 注入),注入客户端 usage。
-	cacheRead       int
-	cacheCreation   int
-	cacheCreation5m int
-	cacheCreation1h int
+	cacheRead        int
+	cacheCreation    int
+	cacheCreation5m  int
+	cacheCreation1h  int
+	cachePromptTotal int // 估算 total,供 Reconcile 对齐真实 total(见 CacheResult.PromptTotalEstimate)
 
 	toolBlockIndices map[string]int
 	toolNameMap      map[string]string // 短名 → 原名,响应时还原
@@ -365,19 +366,22 @@ func (c *StreamContext) SetCache(r CacheResult) {
 	c.cacheCreation = r.CacheCreationInputTokens
 	c.cacheCreation5m = r.CacheCreation5mTokens
 	c.cacheCreation1h = r.CacheCreation1hTokens
+	c.cachePromptTotal = r.PromptTotalEstimate
 }
 
 // usageWithCache 构建 usage 对象:input_tokens 扣掉缓存部分(互斥,避免重复计费),
 // 有缓存时附带 cache_read/creation 及嵌套 cache_creation 5m/1h 明细。
-// 合成缓存按 estimate 前缀算出,这里按本次上报的真实 total(inputTokens)夹一次,
-// 保证 read+creation ≤ total、input 不被夹成负(与计费口径一致)。
+// 合成缓存按 estimate 前缀算出,这里按本次上报的真实 total(inputTokens)做 Reconcile:
+// 用估算 total 等比对齐真值,消除 estimateTokens 与 Kiro contextUsage 的量纲差
+// (否则量纲差被整块甩进 input,账面命中率被压低)。见 CacheResult.Reconcile。
 func (c *StreamContext) usageWithCache(inputTokens, outputTokens int) map[string]any {
 	cr := CacheResult{
 		CacheReadInputTokens:     c.cacheRead,
 		CacheCreationInputTokens: c.cacheCreation,
 		CacheCreation5mTokens:    c.cacheCreation5m,
 		CacheCreation1hTokens:    c.cacheCreation1h,
-	}.CapTo(inputTokens)
+		PromptTotalEstimate:      c.cachePromptTotal,
+	}.Reconcile(inputTokens)
 	input := inputTokens - cr.CacheReadInputTokens - cr.CacheCreationInputTokens
 	if input < 0 {
 		input = 0
