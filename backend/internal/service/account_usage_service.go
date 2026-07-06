@@ -299,6 +299,7 @@ type AccountUsageService struct {
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
+	balanceNotifyService    *BalanceNotifyService // 上游订阅窗口用量低额度告警(可为 nil)
 }
 
 // NewAccountUsageService 创建AccountUsageService实例
@@ -314,6 +315,7 @@ func NewAccountUsageService(
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	balanceNotifyService *BalanceNotifyService,
 ) *AccountUsageService {
 	return &AccountUsageService{
 		accountRepo:             accountRepo,
@@ -327,6 +329,7 @@ func NewAccountUsageService(
 		cache:                   cache,
 		identityCache:           identityCache,
 		tlsFPProfileService:     tlsFPProfileService,
+		balanceNotifyService:    balanceNotifyService,
 	}
 }
 
@@ -1032,6 +1035,12 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			// 重启不丢(镜像 OpenAI 的 codex_* 快照)。降级(401/403/429 带 ErrorCode)不落库,
 			// 避免把一次错误写成账面状态。写入是 fire-and-forget,getKiroUsage 的 3min 缓存已天然限频。
 			if account != nil && usage != nil && usage.Error == "" && usage.ErrorCode == "" {
+				// 低额度告警:用量跨过阈值的那一刻发邮件。oldPct 取上次落库值(边沿去重),
+				// 先算再落库,避免把新值当旧值。
+				if s.balanceNotifyService != nil && usage.FiveHour != nil {
+					oldPct := parseExtraFloat64(account.Extra["kiro_usage_used_percent"])
+					s.balanceNotifyService.CheckUpstreamWindowUsage(context.Background(), account, oldPct, usage.FiveHour.Utilization)
+				}
 				if updates := buildKiroUsageExtraUpdates(usage, time.Now()); len(updates) > 0 {
 					s.persistKiroUsageSnapshot(account.ID, updates)
 				}

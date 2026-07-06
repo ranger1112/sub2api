@@ -204,6 +204,62 @@ func (s *BalanceNotifyService) CheckAccountQuotaAfterIncrement(ctx context.Conte
 	s.checkQuotaDimCrossings(account, dims, cost, adminEmails, siteName)
 }
 
+// kiroUpstreamQuotaAlertThreshold 是「上游订阅窗口用量」的告警阈值(百分比,0-100)。
+const kiroUpstreamQuotaAlertThreshold = 90.0
+
+// upstreamWindowAlertEmailTemplate 是上游订阅窗口用量告警邮件正文(百分比口径,区别于成本口径的
+// quotaAlertEmailTemplate)。Sprintf 参数:siteName, accountID, accountName, platform, usedPercent, threshold。
+const upstreamWindowAlertEmailTemplate = `<!DOCTYPE html>
+<html><body style="font-family:Arial,sans-serif;color:#333;line-height:1.6;">
+<h2>账号用量告警 / Account Usage Alert</h2>
+<p><b>站点 / Site:</b> %s</p>
+<p><b>账号 / Account:</b> #%d %s (%s)</p>
+<p><b>上游订阅窗口用量 / Upstream window usage:</b> %.1f%% (告警阈值 / threshold %.0f%%)</p>
+<p>请及时关注该账号额度,避免请求被上游限流。<br/>Please review this account's quota to avoid upstream rate limiting.</p>
+</body></html>`
+
+// upstreamWindowUsageCrossed 判断用量是否「跨过」告警阈值(上升边沿):旧值未达、新值达到。
+// 边沿语义即天然去重——跨越后新值落库,下次 old ≥ 阈值不再触发。
+func upstreamWindowUsageCrossed(oldPct, newPct, threshold float64) bool {
+	return oldPct < threshold && newPct >= threshold
+}
+
+// CheckUpstreamWindowUsage 在账号「上游订阅窗口用量」跨过告警阈值(默认 90%)的那一刻发一封告警邮件。
+// 复用账号限额通知的全局开关与收件人(SettingKeyAccountQuotaNotifyEnabled / ...Emails)。
+// 去重靠「跨阈值边沿」:oldPct(上次落库的 used_percent)< 阈值 且 newPct ≥ 阈值 才触发;触发后新值
+// 随即落库,下次 old ≥ 阈值 → 不再重发(每次窗口跨越只发一封)。目前由 Kiro 用量刷新触发
+// (newPct = 订阅窗口 used_percent);getKiroUsage 的 3min 缓存天然限频。
+func (s *BalanceNotifyService) CheckUpstreamWindowUsage(ctx context.Context, account *Account, oldPct, newPct float64) {
+	if account == nil || s.emailService == nil || s.settingRepo == nil {
+		return
+	}
+	if !upstreamWindowUsageCrossed(oldPct, newPct, kiroUpstreamQuotaAlertThreshold) {
+		return
+	}
+	if !s.isAccountQuotaNotifyEnabled(ctx) {
+		return
+	}
+	adminEmails := s.getAccountQuotaNotifyEmails(ctx)
+	if len(adminEmails) == 0 {
+		return
+	}
+	siteName := s.getSiteName(ctx)
+	accountID, accountName, platform, usedPercent := account.ID, account.Name, account.Platform, newPct
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("panic in upstream window quota notification", "recover", r)
+			}
+		}()
+		subject := fmt.Sprintf("[%s] 账号用量告警 / Account Usage Alert - %s",
+			sanitizeEmailHeader(siteName), sanitizeEmailHeader(accountName))
+		body := fmt.Sprintf(upstreamWindowAlertEmailTemplate,
+			html.EscapeString(siteName), accountID, html.EscapeString(accountName), html.EscapeString(platform),
+			usedPercent, kiroUpstreamQuotaAlertThreshold)
+		s.sendEmails(adminEmails, subject, body, "account", accountName, "used_percent", usedPercent)
+	}()
+}
+
 // fetchFreshAccount loads the latest account from DB; falls back to the snapshot on error.
 func (s *BalanceNotifyService) fetchFreshAccount(ctx context.Context, snapshot *Account) *Account {
 	if s.accountRepo == nil {
