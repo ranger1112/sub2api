@@ -26,6 +26,14 @@ func TestNormalizeTier(t *testing.T) {
 		{name: "g1-pro-tier", raw: "g1-pro-tier", expected: "PRO"},
 		{name: "g1-ultra-tier", raw: "g1-ultra-tier", expected: "ULTRA"},
 		{name: "kiro power = top tier", raw: "KIRO POWER", expected: "ULTRA"},
+		// 真实 Kiro tier 字符串(见 kiro/usage_limits_test.go):subscriptionTitle "KIRO PRO MAX"
+		// 的底层 type 是 Q_DEVELOPER_STANDALONE_PRO(PRO 型),故归 PRO 是正确的——三桶方案里
+		// Pro/Pro+ 都归 PRO、Power 归 ULTRA。锁定此行为,避免被误"修"成 ULTRA。
+		{name: "kiro free title", raw: "KIRO FREE", expected: "FREE"},
+		{name: "kiro pro title", raw: "KIRO PRO", expected: "PRO"},
+		{name: "kiro pro max is a PRO-type tier", raw: "KIRO PRO MAX", expected: "PRO"},
+		{name: "kiro type code free", raw: "Q_DEVELOPER_STANDALONE_FREE", expected: "FREE"},
+		{name: "kiro type code pro", raw: "Q_DEVELOPER_STANDALONE_PRO", expected: "PRO"},
 		{name: "unknown-something", raw: "unknown-something", expected: "UNKNOWN"},
 		{name: "Google AI Pro contains pro keyword", raw: "Google AI Pro", expected: "PRO"},
 		{name: "case insensitive FREE", raw: "FREE-TIER", expected: "FREE"},
