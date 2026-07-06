@@ -37,7 +37,7 @@ export interface CheckinClaimResult {
  * @returns Check-in status including streak, eligibility, and reward range
  */
 export async function getCheckinStatus(): Promise<CheckinStatus> {
-  const { data } = await apiClient.get<CheckinStatus>('/user/checkin')
+  const { data } = await apiClient.get<CheckinStatus>('/checkin')
   return data
 }
 
@@ -46,7 +46,7 @@ export async function getCheckinStatus(): Promise<CheckinStatus> {
  * @returns Claim result with the reward amount and updated balance
  */
 export async function claimCheckin(): Promise<CheckinClaimResult> {
-  const { data } = await apiClient.post<CheckinClaimResult>('/user/checkin')
+  const { data } = await apiClient.post<CheckinClaimResult>('/checkin')
   return data
 }
 
