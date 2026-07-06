@@ -138,6 +138,11 @@ func (p *KiroTokenProvider) markTempUnschedulable(account *Account, refreshErr e
 	if p == nil || p.accountRepo == nil || account == nil {
 		return
 	}
+	// 客户端断开 / 请求超时导致的刷新取消,不是账号的问题——不惩罚账号,避免把健康号误下线 10min。
+	// (流式 LLM 客户端断连频繁,一旦撞上近过期的请求路径刷新窗口就会误伤。)
+	if errors.Is(refreshErr, context.Canceled) || errors.Is(refreshErr, context.DeadlineExceeded) {
+		return
+	}
 	now := time.Now()
 	until := now.Add(tokenRefreshTempUnschedDuration)
 	redactedErr := "unknown error"

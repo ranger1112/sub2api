@@ -302,6 +302,25 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 				slog.Warn("oauth_401_set_temp_unschedulable_failed", "account_id", authAccount.ID, "error", err)
 			}
 			shouldDisable = true
+		} else if authAccount.Platform == PlatformKiro {
+			// Kiro apikey:401 可能是 Kiro 侧鉴权抖动而非 key 永久失效。且 401 现已可跨账号 failover
+			// (classifyKiroUpstreamError),一次 401 风暴会级联走遍整池——若每个号都永久禁用,一个
+			// 请求就能把 ≤maxAccountSwitches 个 apikey 号永久打死(需人工恢复)。改为临时下线(可自愈),
+			// 保留 failover 的可用性收益又不造成永久损伤。
+			msg := "Kiro authentication failed (401): temporarily unscheduling"
+			if upstreamMsg != "" {
+				msg = "Kiro 401: " + upstreamMsg
+			}
+			cooldownMinutes := s.cfg.RateLimit.OAuth401CooldownMinutes
+			if cooldownMinutes <= 0 {
+				cooldownMinutes = 10
+			}
+			until := time.Now().Add(time.Duration(cooldownMinutes) * time.Minute)
+			s.notifyAccountSchedulingBlocked(authAccount, until, "kiro_401")
+			if err := s.accountRepo.SetTempUnschedulable(ctx, authAccount.ID, until, msg); err != nil {
+				slog.Warn("kiro_401_set_temp_unschedulable_failed", "account_id", authAccount.ID, "error", err)
+			}
+			shouldDisable = true
 		} else {
 			// 非 OAuth：保持 SetError 行为
 			msg := "Authentication failed (401): invalid or expired credentials"
