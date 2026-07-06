@@ -296,6 +296,55 @@ func TestKiroGatewayService_Forward403RoutesToHealthState(t *testing.T) {
 	}
 }
 
+// TestKiroSameAccountRetryable 锁定同账号重试的状态集合:连接级(0)与 503 → true;
+// 429 / 其他 5xx / 4xx → false(跨账号 failover)。
+func TestKiroSameAccountRetryable(t *testing.T) {
+	for _, s := range []int{0, http.StatusServiceUnavailable} {
+		if !kiroSameAccountRetryable(s) {
+			t.Fatalf("status %d should be same-account retryable", s)
+		}
+	}
+	for _, s := range []int{429, 500, 502, 400, 401, 403} {
+		if kiroSameAccountRetryable(s) {
+			t.Fatalf("status %d should NOT be same-account retryable", s)
+		}
+	}
+}
+
+// TestKiroGatewayService_SameAccountRetryFlag 验证 failover 错误上的 RetryableOnSameAccount:
+// 瞬时错误(连接级 / 503)置 true(先在同账号重试保住合成缓存),429 / 500 置 false(跨账号)。
+func TestKiroGatewayService_SameAccountRetryFlag(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
+
+	cases := []struct {
+		name     string
+		rt       http.RoundTripper
+		wantSame bool
+	}{
+		{"connection", &kiroErrRoundTripper{err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}}, true},
+		{"503", &kiroRespRoundTripper{status: http.StatusServiceUnavailable, body: `{"message":"overloaded"}`}, true},
+		{"429", &kiroRespRoundTripper{status: http.StatusTooManyRequests, body: `{"message":"rate limited"}`}, false},
+		{"500", &kiroRespRoundTripper{status: http.StatusInternalServerError, body: `{"message":"boom"}`}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newKiroServiceWithRT(tc.rt)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			_, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false)
+			var fe *UpstreamFailoverError
+			if !errors.As(err, &fe) {
+				t.Fatalf("want *UpstreamFailoverError, got %v", err)
+			}
+			if fe.RetryableOnSameAccount != tc.wantSame {
+				t.Fatalf("RetryableOnSameAccount = %v, want %v", fe.RetryableOnSameAccount, tc.wantSame)
+			}
+		})
+	}
+}
+
 // TestKiroGatewayService_ForwardServerErrorFailsOver 验证 5xx 上游同样触发 failover。
 func TestKiroGatewayService_ForwardServerErrorFailsOver(t *testing.T) {
 	gin.SetMode(gin.TestMode)

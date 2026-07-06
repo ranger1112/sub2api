@@ -224,9 +224,10 @@ func (s *KiroGatewayService) forwardUpstreamFailover(c *gin.Context, account *Ac
 			Message:            message,
 		})
 		return &UpstreamFailoverError{
-			StatusCode:      status,
-			ResponseBody:    respBody,
-			ResponseHeaders: respHeaders,
+			StatusCode:             status,
+			ResponseBody:           respBody,
+			ResponseHeaders:        respHeaders,
+			RetryableOnSameAccount: kiroSameAccountRetryable(status),
 		}
 	}
 
@@ -256,6 +257,16 @@ func kiroStatusEntersHealthState(status int) bool {
 		return true
 	}
 	return false
+}
+
+// kiroSameAccountRetryable 判定「瞬时、非账号级」的可 failover 错误——这类错误在**同一账号**上
+// 先重试(而非立刻跨号)能保住该账号的合成前缀缓存:cache_tracker 按 account.ID 隔离,跨号必冷启动
+// → 整轮 cache_read 归零。只纳入连接级(status 0:net.OpError/超时,pre-first-byte)与 503(上游
+// 瞬时过载);429(限流,重试本号无意义且已进健康态机器冷却)与其他 5xx(持续故障,换号更优)仍跨号。
+// 失败循环的每账号 3 次上限 / 500ms 延迟 / pre-first-byte 守卫自动生效(见 handler/failover_loop.go),
+// 无需在此加计数或 cap。
+func kiroSameAccountRetryable(status int) bool {
+	return status == 0 || status == http.StatusServiceUnavailable
 }
 
 // classifyKiroUpstreamError 解析 Kiro Forward 错误,返回上游状态码、响应体、响应头,以及是否可 failover 重试。
