@@ -192,17 +192,20 @@ func (s *KiroGatewayService) forwardUpstreamFailover(c *gin.Context, account *Ac
 	// 始终记录上游上下文,供 ops 错误日志捕获真实上游状态(即便随后 failover)。
 	setOpsUpstreamError(c, status, message, "")
 
-	// 上游 429:持久化账号限流冷却(写 rate_limit_reset_at),调度器在冷却期内自动跳过该账号,
-	// 到点自动恢复——与 ChatGPT/OpenAI 账号完全一致(复用 RateLimitService.HandleUpstreamError:
-	// 尊重池模式/自定义错误码策略,无 reset 头时落到可配置的默认冷却,并发通知)。与 in-request
-	// failover 互补:failover 处理当前这一发,冷却把该账号排除出后续选号。用 detached context 写入,
-	// 避免客户端在 failover 中途断开导致冷却写入被取消。
-	if status == http.StatusTooManyRequests && s.rateLimitService != nil {
-		pauseCtx := context.Background()
+	// 把有账号级语义的上游错误路由进共享账号健康态机器(与 ChatGPT/OpenAI 账号一致——复用
+	// RateLimitService.HandleUpstreamError,尊重池模式/自定义错误码策略并发通知):
+	//   401 → 失效 token 缓存 + OAuth 临时下线(缺 refresh_token 或 apikey 则永久禁用);
+	//   402 → 计费死号永久禁用;403 → 账号级连续计数临时下线(达阈值才禁用,见 handle403 的 Kiro 分支);
+	//   429 → 限流冷却(honor Retry-After / 默认冷却);529 → 过载冷却(overload_until)。
+	// 与 in-request failover 互补:failover 处理当前这一发,健康态把坏号排除出后续选号,到点自动恢复。
+	// 5xx / 连接级错误不入此机器(视为瞬时,仅请求内 failover)。用 detached context 写入,避免客户端
+	// 在 failover 中途断开导致状态写入被取消。
+	if s.rateLimitService != nil && kiroStatusEntersHealthState(status) {
+		healthCtx := context.Background()
 		if c.Request != nil {
-			pauseCtx = context.WithoutCancel(c.Request.Context())
+			healthCtx = context.WithoutCancel(c.Request.Context())
 		}
-		s.rateLimitService.HandleUpstreamError(pauseCtx, account, status, respHeaders, respBody)
+		s.rateLimitService.HandleUpstreamError(healthCtx, account, status, respHeaders, respBody)
 	}
 
 	requestID := kiroUpstreamRequestID(respHeaders)
@@ -237,6 +240,22 @@ func (s *KiroGatewayService) forwardUpstreamFailover(c *gin.Context, account *Ac
 		Message:            message,
 	})
 	return nil
+}
+
+// kiroStatusEntersHealthState 判定哪些上游状态码应路由进 RateLimitService 的账号健康态机器。
+// 只纳入有明确账号级语义的状态(auth / billing / forbidden / rate-limit / overload);
+// 5xx 与连接级错误视为瞬时,只做请求内 failover,不改账号状态。与 OpenAI 网关口径一致
+// (openai_gateway_service.go 的 401/402/403/429/529)。
+func kiroStatusEntersHealthState(status int) bool {
+	switch status {
+	case http.StatusUnauthorized, // 401
+		http.StatusPaymentRequired, // 402
+		http.StatusForbidden,       // 403
+		http.StatusTooManyRequests, // 429
+		529:                        // 529 overload(http 包无此常量,与代码库其余处一致用字面量)
+		return true
+	}
+	return false
 }
 
 // classifyKiroUpstreamError 解析 Kiro Forward 错误,返回上游状态码、响应体、响应头,以及是否可 failover 重试。

@@ -259,6 +259,43 @@ func TestKiroGatewayService_ForwardServerErrorNoRateLimit(t *testing.T) {
 	}
 }
 
+// TestKiroStatusEntersHealthState 锁定路由进账号健康态机器的状态集合(401/402/403/429/529),
+// 并确认 5xx / 400 / 连接级(0)不进入。
+func TestKiroStatusEntersHealthState(t *testing.T) {
+	for _, s := range []int{401, 402, 403, 429, 529} {
+		if !kiroStatusEntersHealthState(s) {
+			t.Fatalf("status %d should enter health state", s)
+		}
+	}
+	for _, s := range []int{0, 200, 400, 404, 408, 500, 502, 503} {
+		if kiroStatusEntersHealthState(s) {
+			t.Fatalf("status %d should NOT enter health state", s)
+		}
+	}
+}
+
+// TestKiroGatewayService_Forward403RoutesToHealthState 验证:非 429 的账号级错误(此处 403)
+// 也路由进 HandleUpstreamError(与 401/402/529 同),不再像旧逻辑那样只 failover 不落状态。
+func TestKiroGatewayService_Forward403RoutesToHealthState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rt := &kiroRespRoundTripper{status: http.StatusForbidden, body: `{"message":"forbidden"}`}
+	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
+	spy := &kiroRateLimiterSpy{}
+	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	acc := kiroAPIKeyAccount()
+	acc.ID = 88
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
+
+	_, _ = svc.Forward(context.Background(), c, acc, body, false)
+	if spy.calls != 1 || spy.status != http.StatusForbidden {
+		t.Fatalf("403 must route to HandleUpstreamError: calls=%d status=%d", spy.calls, spy.status)
+	}
+}
+
 // TestKiroGatewayService_ForwardServerErrorFailsOver 验证 5xx 上游同样触发 failover。
 func TestKiroGatewayService_ForwardServerErrorFailsOver(t *testing.T) {
 	gin.SetMode(gin.TestMode)

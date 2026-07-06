@@ -775,7 +775,10 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	if account.Platform == PlatformAntigravity {
 		return s.handleAntigravity403(ctx, account, upstreamMsg, responseBody)
 	}
-	if account.Platform == PlatformOpenAI {
+	if account.Platform == PlatformOpenAI || account.Platform == PlatformKiro {
+		// handleOpenAI403 的计数逻辑是账号无关的(账号级连续 403 计数 → 临时下线,达阈值才永久禁用),
+		// Kiro 复用它:避免下方非 Antigravity 通用分支「首次 403 即永久禁用」误杀只是瞬时 403 的账号
+		// (如 token 短暂失效 / 网关抖动)。
 		return s.handleOpenAI403(ctx, account, upstreamMsg, responseBody)
 	}
 	// 非 Antigravity 平台：保持原有行为

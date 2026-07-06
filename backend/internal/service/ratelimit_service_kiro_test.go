@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 // kiro429Repo 记录 SetRateLimited 的入参(id + resetAt),验证 Kiro 429 冷却写入。
@@ -83,5 +85,45 @@ func TestHandle429_KiroRetryAfterZeroFallsBack(t *testing.T) {
 	// 必须是未来的默认冷却,而非 now(no-op)。
 	if !repo.resetAt.After(before.Add(time.Second)) {
 		t.Fatalf("resetAt %v should be a future fallback cooldown, not now", repo.resetAt)
+	}
+}
+
+// TestHandle403_KiroFirstHitTempUnschedulableNotDisabled 是安全回归:Kiro 403 走账号级连续计数
+// 分支(与 OpenAI 一致),首次 403 只临时下线、绝不永久禁用——避免瞬时 403(token 短暂失效 /
+// 网关抖动)误杀健康 Kiro 账号(旧逻辑走通用分支会首 403 即 SetError 永久禁用)。
+func TestHandle403_KiroFirstHitTempUnschedulableNotDisabled(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	counter := &openAI403CounterCacheStub{counts: []int64{1}}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc.SetOpenAI403CounterCache(counter)
+	account := &Account{ID: 401, Platform: PlatformKiro, Type: AccountTypeOAuth}
+
+	svc.HandleUpstreamError(context.Background(), account, http.StatusForbidden, http.Header{},
+		[]byte(`{"message":"transient forbidden"}`))
+
+	if repo.setErrorCalls != 0 {
+		t.Fatalf("first 403 must NOT permanently disable Kiro account (setErrorCalls=%d)", repo.setErrorCalls)
+	}
+	if repo.tempCalls != 1 {
+		t.Fatalf("first 403 should temp-unschedule Kiro account (tempCalls=%d)", repo.tempCalls)
+	}
+}
+
+// TestHandle403_KiroThresholdDisables 验证:连续 403 达阈值(3/3)后 Kiro 账号才被永久禁用。
+func TestHandle403_KiroThresholdDisables(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	counter := &openAI403CounterCacheStub{counts: []int64{3}}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc.SetOpenAI403CounterCache(counter)
+	account := &Account{ID: 402, Platform: PlatformKiro, Type: AccountTypeOAuth}
+
+	svc.HandleUpstreamError(context.Background(), account, http.StatusForbidden, http.Header{},
+		[]byte(`{"message":"banned"}`))
+
+	if repo.setErrorCalls != 1 {
+		t.Fatalf("Kiro 403 at threshold should disable (setErrorCalls=%d)", repo.setErrorCalls)
+	}
+	if repo.tempCalls != 0 {
+		t.Fatalf("Kiro 403 at threshold should not temp-unschedule (tempCalls=%d)", repo.tempCalls)
 	}
 }
