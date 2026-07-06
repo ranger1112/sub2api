@@ -1075,9 +1075,7 @@ func buildKiroUsageExtraUpdates(usage *UsageInfo, now time.Time) map[string]any 
 	if usage == nil {
 		return nil
 	}
-	updates := map[string]any{
-		"kiro_usage_updated_at": now.UTC().Format(time.RFC3339),
-	}
+	updates := map[string]any{}
 	if usage.SubscriptionTierRaw != "" {
 		updates["kiro_subscription_tier_raw"] = usage.SubscriptionTierRaw
 	}
@@ -1086,11 +1084,14 @@ func buildKiroUsageExtraUpdates(usage *UsageInfo, now time.Time) map[string]any 
 	}
 	// 仅在有「有意义的额度」(limit>0)时写用量:limit<=0(如 OVERAGE 零额度占位行被 Primary 选中)
 	// 时 Utilization 恒为 0,若写入会把之前"已耗尽(100%)"的好快照覆盖成 0% → 误把耗尽账号重新
-	// 调度。此时只留 tier + updated_at,用量键保持旧值(JSONB 合并)。
+	// 调度。此时只更新 tier,用量键(含 updated_at 锚点)保持旧值。
 	if p := usage.FiveHour; p != nil && p.LimitRequests > 0 {
 		updates["kiro_usage_used_percent"] = p.Utilization
 		updates["kiro_usage_used"] = p.UsedRequests
 		updates["kiro_usage_limit"] = p.LimitRequests
+		// updated_at 是 used_percent 的陈旧度锚点,只与 used_percent 一起刷新——否则 limit<=0 的刷新
+		// 会让锚点保持新鲜、而它担保的 used_percent 却是旧值,defeat 掉 kiroQuotaExhausted 的陈旧度自愈。
+		updates["kiro_usage_updated_at"] = now.UTC().Format(time.RFC3339)
 		if p.ResetsAt != nil {
 			updates["kiro_usage_reset_at"] = p.ResetsAt.UTC().Format(time.RFC3339)
 		}

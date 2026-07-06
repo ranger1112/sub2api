@@ -48,7 +48,8 @@ func TestBuildKiroUsageExtraUpdates(t *testing.T) {
 		t.Fatal("nil usage should give nil")
 	}
 
-	// tier-only(无窗口):写 tier + updated_at,不写 usage 键。
+	// tier-only(无有效额度窗口):只写 tier,不写任何 usage 键(含 updated_at 锚点)——否则会让
+	// 陈旧 used_percent 的锚点保持新鲜,defeat 掉 kiroQuotaExhausted 的陈旧度自愈。
 	got2 := buildKiroUsageExtraUpdates(&UsageInfo{SubscriptionTier: "FREE"}, now)
 	if got2["kiro_subscription_tier"] != "FREE" {
 		t.Fatalf("tier-only tier = %v", got2["kiro_subscription_tier"])
@@ -56,7 +57,19 @@ func TestBuildKiroUsageExtraUpdates(t *testing.T) {
 	if _, ok := got2["kiro_usage_used"]; ok {
 		t.Fatal("tier-only should not write kiro_usage_used")
 	}
-	if got2["kiro_usage_updated_at"] == nil {
-		t.Fatal("kiro_usage_updated_at must always be written")
+	if _, ok := got2["kiro_usage_updated_at"]; ok {
+		t.Fatal("tier-only (no window) must NOT write kiro_usage_updated_at (anchor pairs with used_percent)")
+	}
+
+	// limit<=0(OVERAGE 零额度占位):不写 used_percent/updated_at(避免覆盖好快照 + 保留自愈锚点)。
+	got3 := buildKiroUsageExtraUpdates(&UsageInfo{
+		SubscriptionTier: "FREE",
+		FiveHour:         &UsageProgress{Utilization: 0, LimitRequests: 0},
+	}, now)
+	if _, ok := got3["kiro_usage_used_percent"]; ok {
+		t.Fatal("limit<=0 must NOT write kiro_usage_used_percent")
+	}
+	if _, ok := got3["kiro_usage_updated_at"]; ok {
+		t.Fatal("limit<=0 must NOT write kiro_usage_updated_at")
 	}
 }
