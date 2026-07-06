@@ -902,6 +902,23 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	if account.IsShadow() {
 		return
 	}
+	// Kiro 平台：上游 429 带标准 Retry-After（delta-seconds 或 HTTP-date）时按其精确暂停,
+	// 否则落到可配置的默认冷却。等价于 ChatGPT 解析 x-codex 头得到 reset 时间的 Kiro 版——
+	// 都是把账号写 rate_limit_reset_at,由平台无关的调度器在冷却期内跳过、到点自动恢复。
+	if account.Platform == PlatformKiro {
+		now := time.Now()
+		if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil && resetAt.After(now) {
+			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
+			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
+				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
+				return
+			}
+			slog.Info("kiro_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt, "reset_in", time.Until(*resetAt).Truncate(time.Second))
+			return
+		}
+		s.apply429FallbackRateLimit(ctx, account, "kiro_no_retry_after")
+		return
+	}
 	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）
 	if account.Platform == PlatformOpenAI {
 		persistOpenAI429PlanType(ctx, s.accountRepo, account, responseBody)

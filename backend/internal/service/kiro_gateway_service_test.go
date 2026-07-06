@@ -44,7 +44,7 @@ func (r *kiroErrRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 
 func newKiroServiceWithRT(rt http.RoundTripper) *KiroGatewayService {
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
-	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker())
+	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), nil)
 }
 
 // kiroTestFrame 构造一个可被 pkg/kiro 解码的 AWS Event Stream 帧(用于伪造上游响应)。
@@ -75,7 +75,7 @@ func kiroTestFrame(eventType, payload string) []byte {
 func newKiroGatewayServiceForTest(body string) *KiroGatewayService {
 	rt := &kiroFakeRoundTripper{status: 200, body: body}
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
-	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker())
+	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), nil)
 }
 
 func kiroAPIKeyAccount() *Account {
@@ -177,6 +177,85 @@ func TestKiroGatewayService_ForwardRetryableUpstreamErrorFailsOver(t *testing.T)
 	vi, _ := v.(int)
 	if !ok || vi != http.StatusTooManyRequests {
 		t.Fatalf("ops upstream status = %v (ok=%v), want 429", v, ok)
+	}
+}
+
+// kiroRateLimiterSpy 记录 HandleUpstreamError 的调用,用于验证 429 自动暂停接线。
+type kiroRateLimiterSpy struct {
+	calls     int
+	accountID int64
+	status    int
+	headers   http.Header
+}
+
+func (s *kiroRateLimiterSpy) HandleUpstreamError(_ context.Context, account *Account, statusCode int, headers http.Header, _ []byte, _ ...string) bool {
+	s.calls++
+	s.accountID = account.ID
+	s.status = statusCode
+	s.headers = headers
+	return false
+}
+
+// TestKiroGatewayService_Forward429PersistsRateLimit 验证:上游 429 时,Kiro 网关调用
+// RateLimitService.HandleUpstreamError 持久化账号限流冷却(与 ChatGPT 账号一致),
+// 且仍返回 *UpstreamFailoverError(冷却与 in-request failover 互补,行为不变)。
+func TestKiroGatewayService_Forward429PersistsRateLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	hdr := make(http.Header)
+	hdr.Set("Retry-After", "60")
+	rt := &kiroRespRoundTripper{status: http.StatusTooManyRequests, body: `{"message":"rate limited"}`, header: hdr}
+	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
+	spy := &kiroRateLimiterSpy{}
+	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	acc := kiroAPIKeyAccount()
+	acc.ID = 77
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
+
+	_, err := svc.Forward(context.Background(), c, acc, body, false)
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("err = %v, want *UpstreamFailoverError", err)
+	}
+	if spy.calls != 1 {
+		t.Fatalf("HandleUpstreamError calls = %d, want 1 (429 must persist rate-limit cooldown)", spy.calls)
+	}
+	if spy.status != http.StatusTooManyRequests {
+		t.Fatalf("HandleUpstreamError status = %d, want 429", spy.status)
+	}
+	if spy.accountID != 77 {
+		t.Fatalf("HandleUpstreamError account id = %d, want 77", spy.accountID)
+	}
+	// 上游响应头(含 Retry-After)必须传给 RateLimitService,供其推导冷却窗口。
+	if spy.headers.Get("Retry-After") != "60" {
+		t.Fatalf("HandleUpstreamError headers Retry-After = %q, want 60", spy.headers.Get("Retry-After"))
+	}
+}
+
+// TestKiroGatewayService_ForwardServerErrorNoRateLimit 验证:5xx 上游只 failover,不持久化限流冷却
+// (只有 429 才暂停账号)。
+func TestKiroGatewayService_ForwardServerErrorNoRateLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rt := &kiroRespRoundTripper{status: http.StatusInternalServerError, body: `{"message":"boom"}`}
+	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
+	spy := &kiroRateLimiterSpy{}
+	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
+
+	_, err := svc.Forward(context.Background(), c, kiroAPIKeyAccount(), body, false)
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("err = %v, want *UpstreamFailoverError for 500", err)
+	}
+	if spy.calls != 0 {
+		t.Fatalf("HandleUpstreamError calls = %d, want 0 (5xx must not persist rate-limit)", spy.calls)
 	}
 }
 

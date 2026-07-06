@@ -603,6 +603,7 @@ var ProviderSet = wire.NewSet(
 	ProvideKiroTokenProvider,
 	ProvideKiroCacheTracker,
 	NewKiroGatewayService,
+	wire.Bind(new(KiroRateLimiter), new(*RateLimitService)),
 	NewKiroQuotaFetcher,
 	NewKiroQuotaService,
 	ProvideRateLimitService,

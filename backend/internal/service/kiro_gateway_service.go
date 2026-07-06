@@ -15,21 +15,28 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 )
 
+// KiroRateLimiter 是 Kiro 网关在上游 429 时持久化账号限流冷却所需的最小依赖,
+// 由 *RateLimitService 实现(见 wire.Bind)。抽成窄接口便于测试注入 spy。
+type KiroRateLimiter interface {
+	HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) bool
+}
+
 // KiroGatewayService 处理 Kiro 账号的 Anthropic /v1/messages 请求。
 // Kiro 账号挂在 anthropic 分组下,由 GatewayHandler 按 account.Platform 分流到此。
 // 账号选择、并发获取、计费由 handler 负责;本服务只做:取 token → 转换 → 调用上游 → 回写响应。
 type KiroGatewayService struct {
-	tokenProvider *KiroTokenProvider
-	clientFor     KiroHTTPClientFactory
-	cfg           kiro.ClientConfig
-	cacheTracker  *kiro.CacheTracker
+	tokenProvider    *KiroTokenProvider
+	clientFor        KiroHTTPClientFactory
+	cfg              kiro.ClientConfig
+	cacheTracker     *kiro.CacheTracker
+	rateLimitService KiroRateLimiter
 }
 
-func NewKiroGatewayService(tokenProvider *KiroTokenProvider, clientFor KiroHTTPClientFactory, cfg kiro.ClientConfig, cacheTracker *kiro.CacheTracker) *KiroGatewayService {
+func NewKiroGatewayService(tokenProvider *KiroTokenProvider, clientFor KiroHTTPClientFactory, cfg kiro.ClientConfig, cacheTracker *kiro.CacheTracker, rateLimitService KiroRateLimiter) *KiroGatewayService {
 	if clientFor == nil {
 		clientFor = func(string) (*http.Client, error) { return http.DefaultClient, nil }
 	}
-	return &KiroGatewayService{tokenProvider: tokenProvider, clientFor: clientFor, cfg: cfg, cacheTracker: cacheTracker}
+	return &KiroGatewayService{tokenProvider: tokenProvider, clientFor: clientFor, cfg: cfg, cacheTracker: cacheTracker, rateLimitService: rateLimitService}
 }
 
 // ProvideKiroCacheTracker 提供进程级单例的合成提示词缓存追踪器(wire）。
@@ -184,6 +191,19 @@ func (s *KiroGatewayService) forwardUpstreamFailover(c *gin.Context, account *Ac
 
 	// 始终记录上游上下文,供 ops 错误日志捕获真实上游状态(即便随后 failover)。
 	setOpsUpstreamError(c, status, message, "")
+
+	// 上游 429:持久化账号限流冷却(写 rate_limit_reset_at),调度器在冷却期内自动跳过该账号,
+	// 到点自动恢复——与 ChatGPT/OpenAI 账号完全一致(复用 RateLimitService.HandleUpstreamError:
+	// 尊重池模式/自定义错误码策略,无 reset 头时落到可配置的默认冷却,并发通知)。与 in-request
+	// failover 互补:failover 处理当前这一发,冷却把该账号排除出后续选号。用 detached context 写入,
+	// 避免客户端在 failover 中途断开导致冷却写入被取消。
+	if status == http.StatusTooManyRequests && s.rateLimitService != nil {
+		pauseCtx := context.Background()
+		if c.Request != nil {
+			pauseCtx = context.WithoutCancel(c.Request.Context())
+		}
+		s.rateLimitService.HandleUpstreamError(pauseCtx, account, status, respHeaders, respBody)
+	}
 
 	requestID := kiroUpstreamRequestID(respHeaders)
 
