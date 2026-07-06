@@ -17,7 +17,8 @@ func TestBuildUsageLimitsRequest_OAuthCredential(t *testing.T) {
 	if req.Method != "POST" {
 		t.Fatalf("method = %s", req.Method)
 	}
-	if req.URL.String() != "https://q.us-east-1.amazonaws.com/getUsageLimits" {
+	// AWS 直连:AWS-JSON 1.0 RPC(POST 根路径 + x-amz-target),非 REST /getUsageLimits。
+	if req.URL.String() != "https://q.us-east-1.amazonaws.com/" {
 		t.Fatalf("url = %s", req.URL)
 	}
 	if req.Host != "q.us-east-1.amazonaws.com" {
@@ -27,7 +28,8 @@ func TestBuildUsageLimitsRequest_OAuthCredential(t *testing.T) {
 		"Authorization":               "Bearer access-tok",
 		"x-amzn-codewhisperer-optout": "true",
 		"x-amzn-kiro-agent-mode":      "vibe",
-		"Content-Type":                "application/json",
+		"Content-Type":                "application/x-amz-json-1.0",
+		"x-amz-target":                "AmazonCodeWhispererService.GetUsageLimits",
 		"amz-sdk-request":             "attempt=1; max=3",
 	}
 	for k, want := range checks {
@@ -50,7 +52,7 @@ func TestBuildUsageLimitsRequest_APIKeyCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildUsageLimitsRequest: %v", err)
 	}
-	if req.URL.String() != "https://q.eu-west-1.amazonaws.com/getUsageLimits" {
+	if req.URL.String() != "https://q.eu-west-1.amazonaws.com/" {
 		t.Fatalf("url = %s (region precedence not honored)", req.URL)
 	}
 	if req.Header.Get("Authorization") != "Bearer ksk_secret" {
@@ -205,5 +207,32 @@ func TestParseUsageLimits_KiroSubscriptionInfo(t *testing.T) {
 	}
 	if p := limits.Primary(); p == nil || p.Limit != 5000 || p.Used != 20 {
 		t.Fatalf("primary = %+v", p)
+	}
+}
+
+// TestParseUsageLimits_RealBuilderIdFree 用真机(BuilderId/free)抓到的 AWS 直连
+// AmazonCodeWhispererService.GetUsageLimits 响应验证解析(userId 已脱敏)。
+func TestParseUsageLimits_RealBuilderIdFree(t *testing.T) {
+	body := []byte(`{"daysUntilReset":0,"limits":[],"nextDateReset":1.7855424E9,` +
+		`"overageConfiguration":{"overageStatus":"DISABLED"},` +
+		`"subscriptionInfo":{"overageCapability":"OVERAGE_INCAPABLE","subscriptionTitle":"KIRO FREE","type":"Q_DEVELOPER_STANDALONE_FREE","upgradeCapability":"UPGRADE_CAPABLE"},` +
+		`"usageBreakdownList":[{"currency":"USD","currentUsage":14,"currentUsageWithPrecision":14.04,"displayName":"Credit","overageCap":10000,"overageRate":0.04,"resourceType":"CREDIT","unit":"INVOCATIONS","usageLimit":50,"usageLimitWithPrecision":50.0}],` +
+		`"userInfo":{"userId":"d-xxxx.xxxx"}}`)
+	limits, err := ParseUsageLimits(body)
+	if err != nil {
+		t.Fatalf("ParseUsageLimits: %v", err)
+	}
+	if limits.SubscriptionType != "KIRO FREE" {
+		t.Fatalf("subscription = %q, want KIRO FREE", limits.SubscriptionType)
+	}
+	if limits.DaysUntilReset == nil || *limits.DaysUntilReset != 0 {
+		t.Fatalf("daysUntilReset = %v, want 0", limits.DaysUntilReset)
+	}
+	p := limits.Primary()
+	if p == nil || p.ResourceType != "CREDIT" || p.Limit != 50 || p.Used != 14 {
+		t.Fatalf("primary = %+v, want CREDIT 14/50", p)
+	}
+	if got := p.Utilization(); got < 27.99 || got > 28.01 {
+		t.Fatalf("utilization = %v, want ~28", got)
 	}
 }

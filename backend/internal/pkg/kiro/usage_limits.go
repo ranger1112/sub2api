@@ -37,9 +37,13 @@ func BuildUsageLimitsRequest(ctx context.Context, cred *Credentials, cfg ClientC
 		return buildExternalIdpUsageLimitsRequest(ctx, cred, cfg)
 	}
 
+	// AWS 直连(social / idc / apikey):GetUsageLimits 是 AmazonCodeWhispererService 上的
+	// AWS-JSON 1.0 RPC 操作——POST 到根路径 "/",以 x-amz-target 指定操作,而非 REST 的
+	// POST /getUsageLimits(后者会 200 返回 UnknownOperationException)。经真机(BuilderId/free)
+	// 抓包/探测证实。控制面(external_idp/企业)才走 management.{region}.kiro.dev/getUsageLimits。
 	apiRegion := cred.EffectiveAPIRegion(cfg)
 	host := "q." + apiRegion + ".amazonaws.com"
-	urlStr := "https://" + host + UsageLimitsPath
+	urlStr := "https://" + host + "/"
 	machineID := MachineID(cred, cfg)
 	if len(body) == 0 {
 		body = BuildUsageLimitsBody(cred)
@@ -57,7 +61,8 @@ func BuildUsageLimitsRequest(ctx context.Context, cred *Credentials, cfg ClientC
 		" api/codewhispererstreaming#1.0.34 m/E KiroIDE-" + cfg.kiroVersion() + "-" + machineID
 
 	h := req.Header
-	h.Set("Content-Type", "application/json")
+	h.Set("Content-Type", "application/x-amz-json-1.0")
+	h.Set("x-amz-target", "AmazonCodeWhispererService.GetUsageLimits")
 	h.Set("x-amzn-codewhisperer-optout", "true")
 	h.Set("x-amzn-kiro-agent-mode", "vibe")
 	h.Set("x-amz-user-agent", xAmzUA)
