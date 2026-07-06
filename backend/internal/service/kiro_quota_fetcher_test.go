@@ -106,9 +106,15 @@ func TestKiroQuotaFetcher_FetchQuota_Success(t *testing.T) {
 	if res.Raw == nil {
 		t.Fatal("raw response should be preserved")
 	}
-	// The outgoing request must target getUsageLimits with the API_KEY disguise.
-	if captured == nil || !strings.HasSuffix(captured.URL.Path, "/getUsageLimits") {
-		t.Fatalf("unexpected request path: %v", captured)
+	// AWS 直连:AWS-JSON 1.0 RPC(POST 根路径 + x-amz-target),带 API_KEY 伪装头。
+	if captured == nil || captured.URL.Path != "/" {
+		t.Fatalf("unexpected request path (want /): %v", captured)
+	}
+	if got := captured.Header.Get("x-amz-target"); got != "AmazonCodeWhispererService.GetUsageLimits" {
+		t.Fatalf("x-amz-target = %q", got)
+	}
+	if got := captured.Header.Get("Content-Type"); got != "application/x-amz-json-1.0" {
+		t.Fatalf("content-type = %q, want application/x-amz-json-1.0", got)
 	}
 	if captured.Header.Get("Authorization") != "Bearer ksk_test_key" {
 		t.Fatalf("authorization = %q", captured.Header.Get("Authorization"))
