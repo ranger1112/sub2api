@@ -57,6 +57,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 	"codex_5h_",
 	"codex_7d_",
 	"passive_usage_",
+	"kiro_", // Kiro 用量/tier 快照(kiro_subscription_tier*, kiro_usage_*):周期性回写,不触发调度桶重建
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{

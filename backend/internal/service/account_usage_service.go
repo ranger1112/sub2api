@@ -1028,6 +1028,14 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			usage = &UsageInfo{UpdatedAt: &now}
 		default:
 			usage = fetchResult.UsageInfo
+			// 成功拉取(非降级)→ 把 tier/用量快照落库到 account.Extra:账号列表可直接展示、
+			// 重启不丢(镜像 OpenAI 的 codex_* 快照)。降级(401/403/429 带 ErrorCode)不落库,
+			// 避免把一次错误写成账面状态。写入是 fire-and-forget,getKiroUsage 的 3min 缓存已天然限频。
+			if account != nil && usage != nil && usage.Error == "" && usage.ErrorCode == "" {
+				if updates := buildKiroUsageExtraUpdates(usage, time.Now()); len(updates) > 0 {
+					s.persistKiroUsageSnapshot(account.ID, updates)
+				}
+			}
 		}
 
 		enrichUsageWithAccountError(usage, account)
@@ -1047,6 +1055,48 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		return &UsageInfo{UpdatedAt: &now}, nil
 	}
 	return usage, nil
+}
+
+// buildKiroUsageExtraUpdates 把一次成功的 Kiro 用量快照拍平成 account.Extra 的 kiro_* 键
+// (镜像 OpenAI 的 codex_* 快照)。kiro_usage_updated_at 始终写(陈旧度锚点);tier / 用量窗口
+// 有值才写。数值经 JSONB 往返为 float64,读取侧用 parseExtraFloat64/parseExtraInt。
+func buildKiroUsageExtraUpdates(usage *UsageInfo, now time.Time) map[string]any {
+	if usage == nil {
+		return nil
+	}
+	updates := map[string]any{
+		"kiro_usage_updated_at": now.UTC().Format(time.RFC3339),
+	}
+	if usage.SubscriptionTierRaw != "" {
+		updates["kiro_subscription_tier_raw"] = usage.SubscriptionTierRaw
+	}
+	if usage.SubscriptionTier != "" {
+		updates["kiro_subscription_tier"] = usage.SubscriptionTier
+	}
+	if p := usage.FiveHour; p != nil {
+		updates["kiro_usage_used_percent"] = p.Utilization
+		if p.UsedRequests > 0 || p.LimitRequests > 0 {
+			updates["kiro_usage_used"] = p.UsedRequests
+			updates["kiro_usage_limit"] = p.LimitRequests
+		}
+		if p.ResetsAt != nil {
+			updates["kiro_usage_reset_at"] = p.ResetsAt.UTC().Format(time.RFC3339)
+		}
+	}
+	return updates
+}
+
+// persistKiroUsageSnapshot 异步把 kiro_* 快照并入 account.Extra(fire-and-forget,独立 5s context,
+// 不阻塞用量查询;UpdateExtra 是 JSONB 合并,保留其它键)。镜像 persistOpenAICodexProbeSnapshot。
+func (s *AccountUsageService) persistKiroUsageSnapshot(accountID int64, updates map[string]any) {
+	if s == nil || s.accountRepo == nil || accountID <= 0 || len(updates) == 0 {
+		return
+	}
+	go func() {
+		updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer updateCancel()
+		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
+	}()
 }
 
 // recalcAntigravityRemainingSeconds 重新计算 Antigravity UsageInfo 中各窗口的 RemainingSeconds

@@ -1265,23 +1265,46 @@ const isAnthropicOAuthOrSetupToken = computed(() => {
   return props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token')
 })
 
+// 持久化的 Kiro 用量/tier 快照(account.extra.kiro_*,后端 buildKiroUsageExtraUpdates 写入):
+// 用于在账号列表中「免实时拉取」即渲染徽章/用量,并在实时拉取失败时兜底。
+const kiroExtra = computed(() => (props.account.extra ?? {}) as Record<string, unknown>)
+const kiroExtraStr = (key: string): string | null => {
+  const v = kiroExtra.value[key]
+  return typeof v === 'string' && v ? v : null
+}
+const kiroExtraNum = (key: string): number | null => {
+  const n = Number(kiroExtra.value[key])
+  return Number.isFinite(n) ? n : null
+}
+
 // Kiro monthly request quota label (used / limit). Tolerates missing counts.
 const kiroRequestsLabel = computed(() => {
   const fh = usageInfo.value?.five_hour
-  if (!fh || fh.limit_requests == null) return null
-  const used = fh.used_requests ?? 0
-  return `${formatCompactNumber(used, { allowBillions: false })} / ${formatCompactNumber(fh.limit_requests, { allowBillions: false })} req`
+  if (fh && fh.limit_requests != null) {
+    const used = fh.used_requests ?? 0
+    return `${formatCompactNumber(used, { allowBillions: false })} / ${formatCompactNumber(fh.limit_requests, { allowBillions: false })} req`
+  }
+  // fallback:持久化快照(免实时拉取)。
+  const limit = kiroExtraNum('kiro_usage_limit')
+  if (limit != null && limit > 0) {
+    const used = kiroExtraNum('kiro_usage_used') ?? 0
+    return `${formatCompactNumber(used, { allowBillions: false })} / ${formatCompactNumber(limit, { allowBillions: false })} req`
+  }
+  return null
 })
 
-// Kiro 账户类型(订阅等级)徽章:优先显示上游可读原始名(如 "KIRO PRO MAX")。
+// Kiro 账户类型(订阅等级)徽章:优先显示上游可读原始名(如 "KIRO PRO MAX");
+// 无实时数据时回退到持久化快照。
 const kiroTierLabel = computed(() => {
   const info = usageInfo.value
-  if (!info) return null
-  return info.subscription_tier_raw || info.subscription_tier || null
+  if (info && (info.subscription_tier_raw || info.subscription_tier)) {
+    return info.subscription_tier_raw || info.subscription_tier || null
+  }
+  return kiroExtraStr('kiro_subscription_tier_raw') || kiroExtraStr('kiro_subscription_tier')
 })
 
 const kiroTierClass = computed(() => {
-  switch (usageInfo.value?.subscription_tier) {
+  switch (usageInfo.value?.subscription_tier || kiroExtraStr('kiro_subscription_tier')) {
     case 'ULTRA':
       return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
     case 'PRO':
