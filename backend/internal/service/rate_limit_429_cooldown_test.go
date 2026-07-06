@@ -34,7 +34,7 @@ func TestGetRateLimit429CooldownSettings_DefaultsWhenNotSet(t *testing.T) {
 	settings, err := svc.GetRateLimit429CooldownSettings(context.Background())
 	require.NoError(t, err)
 	require.True(t, settings.Enabled)
-	require.Equal(t, 5, settings.CooldownSeconds)
+	require.Equal(t, 1800, settings.CooldownSeconds) // 默认 30min(见 DefaultRateLimit429CooldownSettings)
 }
 
 func TestGetRateLimit429CooldownSettings_ReadsFromDB(t *testing.T) {
@@ -109,5 +109,6 @@ func TestHandle429_FallbackUsesDefaultSecondsWhenSettingServiceMissing(t *testin
 
 	require.Equal(t, 1, accountRepo.rateLimitCalls)
 	require.Equal(t, int64(44), accountRepo.lastRateLimitID)
-	require.True(t, !accountRepo.lastRateLimitReset.Before(before.Add(5*time.Second)) && !accountRepo.lastRateLimitReset.After(after.Add(5*time.Second)))
+	// settingService 缺失 → 代码默认常量 defaultRateLimit429CooldownSeconds = 1800(30min)。
+	require.True(t, !accountRepo.lastRateLimitReset.Before(before.Add(1800*time.Second)) && !accountRepo.lastRateLimitReset.After(after.Add(1800*time.Second)))
 }
