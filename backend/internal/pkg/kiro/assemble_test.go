@@ -2,6 +2,17 @@ package kiro
 
 import "testing"
 
+// TestFinalInputTokens_ZeroContextFallsBackToEstimate 回归:上游 contextUsagePercentage=0
+// (或小请求在 1M 窗口模型上四舍五入到 0%)时,FinalInputTokens 必须退回估算值,否则 input 与
+// 随后 Reconcile 的 cache 会被一起归零(整单计费为 0)。
+func TestFinalInputTokens_ZeroContextFallsBackToEstimate(t *testing.T) {
+	c := NewStreamContext("claude-opus-4-8", 5000, false, nil)
+	c.ProcessKiroEvent(Event{Kind: EventContextUsage, ContextUsagePercentage: 0})
+	if got := c.FinalInputTokens(); got != 5000 {
+		t.Fatalf("FinalInputTokens with 0%% context = %d, want 5000 (estimate fallback, not 0)", got)
+	}
+}
+
 // TestAssembleMessage_NonStreamCacheFromDelta 回归:非流式响应的 usage 缓存字段必须取自
 // message_delta(按真实 total reconcile),而非 message_start(按估算 total reconcile)。
 // 否则返回体的 cache_read/creation 与 input_tokens/计费不同口径(见 assemble.go 修复)。

@@ -67,11 +67,12 @@ func (r CacheResult) CapTo(total int) CacheResult {
 	if sum == 0 {
 		return CacheResult{}
 	}
-	read := r.CacheReadInputTokens * total / sum
+	// int64 中间量,防 32-bit 溢出(与 Reconcile 一致;token 数可达数十万)。
+	read := int(int64(r.CacheReadInputTokens) * int64(total) / int64(sum))
 	creation := total - read
 	var c5m, c1h int
 	if r.CacheCreationInputTokens > 0 {
-		c5m = r.CacheCreation5mTokens * creation / r.CacheCreationInputTokens
+		c5m = int(int64(r.CacheCreation5mTokens) * int64(creation) / int64(r.CacheCreationInputTokens))
 		c1h = creation - c5m
 	}
 	return CacheResult{
@@ -426,7 +427,7 @@ func computeTTLBreakdown(p *CacheProfile, matched int) (c5m, c1h int) {
 }
 
 // minimumCacheableTokens 返回模型的最小可缓存 prompt 长度(对齐 Anthropic)。
-// 断点累计 token 不足此值则不计入缓存。Kiro 只服务 haiku-4.5,故 haiku → 1024。
+// 断点累计 token 不足此值则不计入缓存(对齐 Anthropic:opus 系列 4096,其余 1024)。
 func minimumCacheableTokens(model string) int {
 	mapped, ok := MapModel(model)
 	if !ok {

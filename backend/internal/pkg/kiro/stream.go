@@ -678,8 +678,10 @@ func (c *StreamContext) processToolUse(tu ToolUseEvent) []SSEEvent {
 }
 
 // FinalInputTokens 返回最终 input_tokens:优先取 contextUsageEvent 计算值,否则用初始估算值。
+// 注意 contextInputTokens 可能为 0(上游发来 contextUsagePercentage=0,或小请求在 1M 窗口模型上
+// 四舍五入到 0%);此时必须退回估算值,否则 input 与随后 Reconcile 的 cache 会被一起归零(整单计费为 0)。
 func (c *StreamContext) FinalInputTokens() int {
-	if c.hasContextTokens {
+	if c.hasContextTokens && c.contextInputTokens > 0 {
 		return c.contextInputTokens
 	}
 	return c.InputTokens
@@ -728,7 +730,7 @@ func (c *StreamContext) GenerateFinalEvents() []SSEEvent {
 	}
 
 	finalInputTokens := c.InputTokens
-	if c.hasContextTokens {
+	if c.hasContextTokens && c.contextInputTokens > 0 { // 0 → 退回估算,避免整单计费归零
 		finalInputTokens = c.contextInputTokens
 	}
 	usage := c.usageWithCache(finalInputTokens, c.OutputTokens)
@@ -779,7 +781,7 @@ func (b *BufferedStreamContext) FinishAndGetAllEvents() []SSEEvent {
 	b.buffer = append(b.buffer, b.inner.GenerateFinalEvents()...)
 
 	finalInputTokens := b.estimatedInputTokens
-	if b.inner.hasContextTokens {
+	if b.inner.hasContextTokens && b.inner.contextInputTokens > 0 { // 0 → 退回估算,避免整单计费归零
 		finalInputTokens = b.inner.contextInputTokens
 	}
 	for i := range b.buffer {
