@@ -611,6 +611,75 @@ var (
 			},
 		},
 	}
+	// CheckInRecordsColumns holds the columns for the "check_in_records" table.
+	CheckInRecordsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "check_in_date", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "date"}},
+		{Name: "reward_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "streak_count", Type: field.TypeInt, Default: 0},
+		{Name: "score", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,6)"}},
+		{Name: "recharge_snapshot", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "usage_snapshot", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// CheckInRecordsTable holds the schema information for the "check_in_records" table.
+	CheckInRecordsTable = &schema.Table{
+		Name:       "check_in_records",
+		Columns:    CheckInRecordsColumns,
+		PrimaryKey: []*schema.Column{CheckInRecordsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "checkinrecord_user_id_check_in_date",
+				Unique:  true,
+				Columns: []*schema.Column{CheckInRecordsColumns[1], CheckInRecordsColumns[2]},
+			},
+			{
+				Name:    "checkinrecord_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{CheckInRecordsColumns[1], CheckInRecordsColumns[8]},
+			},
+			{
+				Name:    "checkinrecord_check_in_date",
+				Unique:  false,
+				Columns: []*schema.Column{CheckInRecordsColumns[2]},
+			},
+		},
+	}
+	// CheckinRewardTiersColumns holds the columns for the "checkin_reward_tiers" table.
+	CheckinRewardTiersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "name", Type: field.TypeString, Size: 64},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "match_type", Type: field.TypeString, Size: 16, Default: "recharge"},
+		{Name: "match_threshold", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "min_reward", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "max_reward", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "base_cap", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "beta_min", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,6)"}},
+		{Name: "beta_max", Type: field.TypeFloat64, Default: 3, SchemaType: map[string]string{"postgres": "decimal(10,6)"}},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// CheckinRewardTiersTable holds the schema information for the "checkin_reward_tiers" table.
+	CheckinRewardTiersTable = &schema.Table{
+		Name:       "checkin_reward_tiers",
+		Columns:    CheckinRewardTiersColumns,
+		PrimaryKey: []*schema.Column{CheckinRewardTiersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "checkinrewardtier_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{CheckinRewardTiersColumns[2]},
+			},
+			{
+				Name:    "checkinrewardtier_sort_order",
+				Unique:  false,
+				Columns: []*schema.Column{CheckinRewardTiersColumns[10]},
+			},
+		},
+	}
 	// ErrorPassthroughRulesColumns holds the columns for the "error_passthrough_rules" table.
 	ErrorPassthroughRulesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1804,6 +1873,8 @@ var (
 		ChannelMonitorDailyRollupsTable,
 		ChannelMonitorHistoriesTable,
 		ChannelMonitorRequestTemplatesTable,
+		CheckInRecordsTable,
+		CheckinRewardTiersTable,
 		ErrorPassthroughRulesTable,
 		GroupsTable,
 		IdempotencyRecordsTable,
@@ -1877,6 +1948,12 @@ func init() {
 	}
 	ChannelMonitorRequestTemplatesTable.Annotation = &entsql.Annotation{
 		Table: "channel_monitor_request_templates",
+	}
+	CheckInRecordsTable.Annotation = &entsql.Annotation{
+		Table: "check_in_records",
+	}
+	CheckinRewardTiersTable.Annotation = &entsql.Annotation{
+		Table: "checkin_reward_tiers",
 	}
 	ErrorPassthroughRulesTable.Annotation = &entsql.Annotation{
 		Table: "error_passthrough_rules",

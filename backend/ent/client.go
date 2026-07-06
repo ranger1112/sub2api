@@ -26,6 +26,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/checkinrecord"
+	"github.com/Wei-Shaw/sub2api/ent/checkinrewardtier"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -81,6 +83,10 @@ type Client struct {
 	ChannelMonitorHistory *ChannelMonitorHistoryClient
 	// ChannelMonitorRequestTemplate is the client for interacting with the ChannelMonitorRequestTemplate builders.
 	ChannelMonitorRequestTemplate *ChannelMonitorRequestTemplateClient
+	// CheckInRecord is the client for interacting with the CheckInRecord builders.
+	CheckInRecord *CheckInRecordClient
+	// CheckInRewardTier is the client for interacting with the CheckInRewardTier builders.
+	CheckInRewardTier *CheckInRewardTierClient
 	// ErrorPassthroughRule is the client for interacting with the ErrorPassthroughRule builders.
 	ErrorPassthroughRule *ErrorPassthroughRuleClient
 	// Group is the client for interacting with the Group builders.
@@ -151,6 +157,8 @@ func (c *Client) init() {
 	c.ChannelMonitorDailyRollup = NewChannelMonitorDailyRollupClient(c.config)
 	c.ChannelMonitorHistory = NewChannelMonitorHistoryClient(c.config)
 	c.ChannelMonitorRequestTemplate = NewChannelMonitorRequestTemplateClient(c.config)
+	c.CheckInRecord = NewCheckInRecordClient(c.config)
+	c.CheckInRewardTier = NewCheckInRewardTierClient(c.config)
 	c.ErrorPassthroughRule = NewErrorPassthroughRuleClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
@@ -278,6 +286,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
 		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
+		CheckInRecord:                 NewCheckInRecordClient(cfg),
+		CheckInRewardTier:             NewCheckInRewardTierClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
@@ -332,6 +342,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
 		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
+		CheckInRecord:                 NewCheckInRecordClient(cfg),
+		CheckInRewardTier:             NewCheckInRewardTierClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
@@ -388,12 +400,13 @@ func (c *Client) Use(hooks ...Hook) {
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
 		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
-		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
-		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.ChannelMonitorRequestTemplate, c.CheckInRecord, c.CheckInRewardTier,
+		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
+		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
+		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
@@ -407,12 +420,13 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
 		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
-		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
-		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
-		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.ChannelMonitorRequestTemplate, c.CheckInRecord, c.CheckInRewardTier,
+		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
+		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
+		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
@@ -444,6 +458,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ChannelMonitorHistory.mutate(ctx, m)
 	case *ChannelMonitorRequestTemplateMutation:
 		return c.ChannelMonitorRequestTemplate.mutate(ctx, m)
+	case *CheckInRecordMutation:
+		return c.CheckInRecord.mutate(ctx, m)
+	case *CheckInRewardTierMutation:
+		return c.CheckInRewardTier.mutate(ctx, m)
 	case *ErrorPassthroughRuleMutation:
 		return c.ErrorPassthroughRule.mutate(ctx, m)
 	case *GroupMutation:
@@ -2296,6 +2314,272 @@ func (c *ChannelMonitorRequestTemplateClient) mutate(ctx context.Context, m *Cha
 		return (&ChannelMonitorRequestTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ChannelMonitorRequestTemplate mutation op: %q", m.Op())
+	}
+}
+
+// CheckInRecordClient is a client for the CheckInRecord schema.
+type CheckInRecordClient struct {
+	config
+}
+
+// NewCheckInRecordClient returns a client for the CheckInRecord from the given config.
+func NewCheckInRecordClient(c config) *CheckInRecordClient {
+	return &CheckInRecordClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `checkinrecord.Hooks(f(g(h())))`.
+func (c *CheckInRecordClient) Use(hooks ...Hook) {
+	c.hooks.CheckInRecord = append(c.hooks.CheckInRecord, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `checkinrecord.Intercept(f(g(h())))`.
+func (c *CheckInRecordClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CheckInRecord = append(c.inters.CheckInRecord, interceptors...)
+}
+
+// Create returns a builder for creating a CheckInRecord entity.
+func (c *CheckInRecordClient) Create() *CheckInRecordCreate {
+	mutation := newCheckInRecordMutation(c.config, OpCreate)
+	return &CheckInRecordCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CheckInRecord entities.
+func (c *CheckInRecordClient) CreateBulk(builders ...*CheckInRecordCreate) *CheckInRecordCreateBulk {
+	return &CheckInRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CheckInRecordClient) MapCreateBulk(slice any, setFunc func(*CheckInRecordCreate, int)) *CheckInRecordCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CheckInRecordCreateBulk{err: fmt.Errorf("calling to CheckInRecordClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CheckInRecordCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CheckInRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CheckInRecord.
+func (c *CheckInRecordClient) Update() *CheckInRecordUpdate {
+	mutation := newCheckInRecordMutation(c.config, OpUpdate)
+	return &CheckInRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CheckInRecordClient) UpdateOne(_m *CheckInRecord) *CheckInRecordUpdateOne {
+	mutation := newCheckInRecordMutation(c.config, OpUpdateOne, withCheckInRecord(_m))
+	return &CheckInRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CheckInRecordClient) UpdateOneID(id int64) *CheckInRecordUpdateOne {
+	mutation := newCheckInRecordMutation(c.config, OpUpdateOne, withCheckInRecordID(id))
+	return &CheckInRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CheckInRecord.
+func (c *CheckInRecordClient) Delete() *CheckInRecordDelete {
+	mutation := newCheckInRecordMutation(c.config, OpDelete)
+	return &CheckInRecordDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CheckInRecordClient) DeleteOne(_m *CheckInRecord) *CheckInRecordDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CheckInRecordClient) DeleteOneID(id int64) *CheckInRecordDeleteOne {
+	builder := c.Delete().Where(checkinrecord.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CheckInRecordDeleteOne{builder}
+}
+
+// Query returns a query builder for CheckInRecord.
+func (c *CheckInRecordClient) Query() *CheckInRecordQuery {
+	return &CheckInRecordQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCheckInRecord},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CheckInRecord entity by its id.
+func (c *CheckInRecordClient) Get(ctx context.Context, id int64) (*CheckInRecord, error) {
+	return c.Query().Where(checkinrecord.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CheckInRecordClient) GetX(ctx context.Context, id int64) *CheckInRecord {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *CheckInRecordClient) Hooks() []Hook {
+	return c.hooks.CheckInRecord
+}
+
+// Interceptors returns the client interceptors.
+func (c *CheckInRecordClient) Interceptors() []Interceptor {
+	return c.inters.CheckInRecord
+}
+
+func (c *CheckInRecordClient) mutate(ctx context.Context, m *CheckInRecordMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CheckInRecordCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CheckInRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CheckInRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CheckInRecordDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CheckInRecord mutation op: %q", m.Op())
+	}
+}
+
+// CheckInRewardTierClient is a client for the CheckInRewardTier schema.
+type CheckInRewardTierClient struct {
+	config
+}
+
+// NewCheckInRewardTierClient returns a client for the CheckInRewardTier from the given config.
+func NewCheckInRewardTierClient(c config) *CheckInRewardTierClient {
+	return &CheckInRewardTierClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `checkinrewardtier.Hooks(f(g(h())))`.
+func (c *CheckInRewardTierClient) Use(hooks ...Hook) {
+	c.hooks.CheckInRewardTier = append(c.hooks.CheckInRewardTier, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `checkinrewardtier.Intercept(f(g(h())))`.
+func (c *CheckInRewardTierClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CheckInRewardTier = append(c.inters.CheckInRewardTier, interceptors...)
+}
+
+// Create returns a builder for creating a CheckInRewardTier entity.
+func (c *CheckInRewardTierClient) Create() *CheckInRewardTierCreate {
+	mutation := newCheckInRewardTierMutation(c.config, OpCreate)
+	return &CheckInRewardTierCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CheckInRewardTier entities.
+func (c *CheckInRewardTierClient) CreateBulk(builders ...*CheckInRewardTierCreate) *CheckInRewardTierCreateBulk {
+	return &CheckInRewardTierCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CheckInRewardTierClient) MapCreateBulk(slice any, setFunc func(*CheckInRewardTierCreate, int)) *CheckInRewardTierCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CheckInRewardTierCreateBulk{err: fmt.Errorf("calling to CheckInRewardTierClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CheckInRewardTierCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CheckInRewardTierCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CheckInRewardTier.
+func (c *CheckInRewardTierClient) Update() *CheckInRewardTierUpdate {
+	mutation := newCheckInRewardTierMutation(c.config, OpUpdate)
+	return &CheckInRewardTierUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CheckInRewardTierClient) UpdateOne(_m *CheckInRewardTier) *CheckInRewardTierUpdateOne {
+	mutation := newCheckInRewardTierMutation(c.config, OpUpdateOne, withCheckInRewardTier(_m))
+	return &CheckInRewardTierUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CheckInRewardTierClient) UpdateOneID(id int64) *CheckInRewardTierUpdateOne {
+	mutation := newCheckInRewardTierMutation(c.config, OpUpdateOne, withCheckInRewardTierID(id))
+	return &CheckInRewardTierUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CheckInRewardTier.
+func (c *CheckInRewardTierClient) Delete() *CheckInRewardTierDelete {
+	mutation := newCheckInRewardTierMutation(c.config, OpDelete)
+	return &CheckInRewardTierDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CheckInRewardTierClient) DeleteOne(_m *CheckInRewardTier) *CheckInRewardTierDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CheckInRewardTierClient) DeleteOneID(id int64) *CheckInRewardTierDeleteOne {
+	builder := c.Delete().Where(checkinrewardtier.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CheckInRewardTierDeleteOne{builder}
+}
+
+// Query returns a query builder for CheckInRewardTier.
+func (c *CheckInRewardTierClient) Query() *CheckInRewardTierQuery {
+	return &CheckInRewardTierQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCheckInRewardTier},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CheckInRewardTier entity by its id.
+func (c *CheckInRewardTierClient) Get(ctx context.Context, id int64) (*CheckInRewardTier, error) {
+	return c.Query().Where(checkinrewardtier.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CheckInRewardTierClient) GetX(ctx context.Context, id int64) *CheckInRewardTier {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *CheckInRewardTierClient) Hooks() []Hook {
+	return c.hooks.CheckInRewardTier
+}
+
+// Interceptors returns the client interceptors.
+func (c *CheckInRewardTierClient) Interceptors() []Interceptor {
+	return c.inters.CheckInRewardTier
+}
+
+func (c *CheckInRewardTierClient) mutate(ctx context.Context, m *CheckInRewardTierMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CheckInRewardTierCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CheckInRewardTierUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CheckInRewardTierUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CheckInRewardTierDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CheckInRewardTier mutation op: %q", m.Op())
 	}
 }
 
@@ -6243,24 +6527,24 @@ type (
 	hooks struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
-		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CheckInRecord,
+		CheckInRewardTier, ErrorPassthroughRule, Group, IdempotencyRecord,
+		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
-		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CheckInRecord,
+		CheckInRewardTier, ErrorPassthroughRule, Group, IdempotencyRecord,
+		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
+		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

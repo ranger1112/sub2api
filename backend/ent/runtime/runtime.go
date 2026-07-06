@@ -16,6 +16,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/checkinrecord"
+	"github.com/Wei-Shaw/sub2api/ent/checkinrewardtier"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -696,6 +698,100 @@ func init() {
 	channelmonitorrequesttemplate.DefaultBodyOverrideMode = channelmonitorrequesttemplateDescBodyOverrideMode.Default.(string)
 	// channelmonitorrequesttemplate.BodyOverrideModeValidator is a validator for the "body_override_mode" field. It is called by the builders before save.
 	channelmonitorrequesttemplate.BodyOverrideModeValidator = channelmonitorrequesttemplateDescBodyOverrideMode.Validators[0].(func(string) error)
+	checkinrecordFields := schema.CheckInRecord{}.Fields()
+	_ = checkinrecordFields
+	// checkinrecordDescRewardAmount is the schema descriptor for reward_amount field.
+	checkinrecordDescRewardAmount := checkinrecordFields[2].Descriptor()
+	// checkinrecord.DefaultRewardAmount holds the default value on creation for the reward_amount field.
+	checkinrecord.DefaultRewardAmount = checkinrecordDescRewardAmount.Default.(float64)
+	// checkinrecordDescStreakCount is the schema descriptor for streak_count field.
+	checkinrecordDescStreakCount := checkinrecordFields[3].Descriptor()
+	// checkinrecord.DefaultStreakCount holds the default value on creation for the streak_count field.
+	checkinrecord.DefaultStreakCount = checkinrecordDescStreakCount.Default.(int)
+	// checkinrecordDescScore is the schema descriptor for score field.
+	checkinrecordDescScore := checkinrecordFields[4].Descriptor()
+	// checkinrecord.DefaultScore holds the default value on creation for the score field.
+	checkinrecord.DefaultScore = checkinrecordDescScore.Default.(float64)
+	// checkinrecordDescRechargeSnapshot is the schema descriptor for recharge_snapshot field.
+	checkinrecordDescRechargeSnapshot := checkinrecordFields[5].Descriptor()
+	// checkinrecord.DefaultRechargeSnapshot holds the default value on creation for the recharge_snapshot field.
+	checkinrecord.DefaultRechargeSnapshot = checkinrecordDescRechargeSnapshot.Default.(float64)
+	// checkinrecordDescUsageSnapshot is the schema descriptor for usage_snapshot field.
+	checkinrecordDescUsageSnapshot := checkinrecordFields[6].Descriptor()
+	// checkinrecord.DefaultUsageSnapshot holds the default value on creation for the usage_snapshot field.
+	checkinrecord.DefaultUsageSnapshot = checkinrecordDescUsageSnapshot.Default.(float64)
+	// checkinrecordDescCreatedAt is the schema descriptor for created_at field.
+	checkinrecordDescCreatedAt := checkinrecordFields[7].Descriptor()
+	// checkinrecord.DefaultCreatedAt holds the default value on creation for the created_at field.
+	checkinrecord.DefaultCreatedAt = checkinrecordDescCreatedAt.Default.(func() time.Time)
+	checkinrewardtierFields := schema.CheckInRewardTier{}.Fields()
+	_ = checkinrewardtierFields
+	// checkinrewardtierDescName is the schema descriptor for name field.
+	checkinrewardtierDescName := checkinrewardtierFields[0].Descriptor()
+	// checkinrewardtier.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	checkinrewardtier.NameValidator = func() func(string) error {
+		validators := checkinrewardtierDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// checkinrewardtierDescEnabled is the schema descriptor for enabled field.
+	checkinrewardtierDescEnabled := checkinrewardtierFields[1].Descriptor()
+	// checkinrewardtier.DefaultEnabled holds the default value on creation for the enabled field.
+	checkinrewardtier.DefaultEnabled = checkinrewardtierDescEnabled.Default.(bool)
+	// checkinrewardtierDescMatchType is the schema descriptor for match_type field.
+	checkinrewardtierDescMatchType := checkinrewardtierFields[2].Descriptor()
+	// checkinrewardtier.DefaultMatchType holds the default value on creation for the match_type field.
+	checkinrewardtier.DefaultMatchType = checkinrewardtierDescMatchType.Default.(string)
+	// checkinrewardtier.MatchTypeValidator is a validator for the "match_type" field. It is called by the builders before save.
+	checkinrewardtier.MatchTypeValidator = checkinrewardtierDescMatchType.Validators[0].(func(string) error)
+	// checkinrewardtierDescMatchThreshold is the schema descriptor for match_threshold field.
+	checkinrewardtierDescMatchThreshold := checkinrewardtierFields[3].Descriptor()
+	// checkinrewardtier.DefaultMatchThreshold holds the default value on creation for the match_threshold field.
+	checkinrewardtier.DefaultMatchThreshold = checkinrewardtierDescMatchThreshold.Default.(float64)
+	// checkinrewardtierDescMinReward is the schema descriptor for min_reward field.
+	checkinrewardtierDescMinReward := checkinrewardtierFields[4].Descriptor()
+	// checkinrewardtier.DefaultMinReward holds the default value on creation for the min_reward field.
+	checkinrewardtier.DefaultMinReward = checkinrewardtierDescMinReward.Default.(float64)
+	// checkinrewardtierDescMaxReward is the schema descriptor for max_reward field.
+	checkinrewardtierDescMaxReward := checkinrewardtierFields[5].Descriptor()
+	// checkinrewardtier.DefaultMaxReward holds the default value on creation for the max_reward field.
+	checkinrewardtier.DefaultMaxReward = checkinrewardtierDescMaxReward.Default.(float64)
+	// checkinrewardtierDescBaseCap is the schema descriptor for base_cap field.
+	checkinrewardtierDescBaseCap := checkinrewardtierFields[6].Descriptor()
+	// checkinrewardtier.DefaultBaseCap holds the default value on creation for the base_cap field.
+	checkinrewardtier.DefaultBaseCap = checkinrewardtierDescBaseCap.Default.(float64)
+	// checkinrewardtierDescBetaMin is the schema descriptor for beta_min field.
+	checkinrewardtierDescBetaMin := checkinrewardtierFields[7].Descriptor()
+	// checkinrewardtier.DefaultBetaMin holds the default value on creation for the beta_min field.
+	checkinrewardtier.DefaultBetaMin = checkinrewardtierDescBetaMin.Default.(float64)
+	// checkinrewardtierDescBetaMax is the schema descriptor for beta_max field.
+	checkinrewardtierDescBetaMax := checkinrewardtierFields[8].Descriptor()
+	// checkinrewardtier.DefaultBetaMax holds the default value on creation for the beta_max field.
+	checkinrewardtier.DefaultBetaMax = checkinrewardtierDescBetaMax.Default.(float64)
+	// checkinrewardtierDescSortOrder is the schema descriptor for sort_order field.
+	checkinrewardtierDescSortOrder := checkinrewardtierFields[9].Descriptor()
+	// checkinrewardtier.DefaultSortOrder holds the default value on creation for the sort_order field.
+	checkinrewardtier.DefaultSortOrder = checkinrewardtierDescSortOrder.Default.(int)
+	// checkinrewardtierDescCreatedAt is the schema descriptor for created_at field.
+	checkinrewardtierDescCreatedAt := checkinrewardtierFields[10].Descriptor()
+	// checkinrewardtier.DefaultCreatedAt holds the default value on creation for the created_at field.
+	checkinrewardtier.DefaultCreatedAt = checkinrewardtierDescCreatedAt.Default.(func() time.Time)
+	// checkinrewardtierDescUpdatedAt is the schema descriptor for updated_at field.
+	checkinrewardtierDescUpdatedAt := checkinrewardtierFields[11].Descriptor()
+	// checkinrewardtier.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	checkinrewardtier.DefaultUpdatedAt = checkinrewardtierDescUpdatedAt.Default.(func() time.Time)
+	// checkinrewardtier.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	checkinrewardtier.UpdateDefaultUpdatedAt = checkinrewardtierDescUpdatedAt.UpdateDefault.(func() time.Time)
 	errorpassthroughruleMixin := schema.ErrorPassthroughRule{}.Mixin()
 	errorpassthroughruleMixinFields0 := errorpassthroughruleMixin[0].Fields()
 	_ = errorpassthroughruleMixinFields0

@@ -141,6 +141,30 @@ func (f ChannelMonitorRequestTemplateFunc) Mutate(ctx context.Context, m ent.Mut
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ChannelMonitorRequestTemplateMutation", m)
 }
 
+// The CheckInRecordFunc type is an adapter to allow the use of ordinary
+// function as CheckInRecord mutator.
+type CheckInRecordFunc func(context.Context, *ent.CheckInRecordMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CheckInRecordFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CheckInRecordMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CheckInRecordMutation", m)
+}
+
+// The CheckInRewardTierFunc type is an adapter to allow the use of ordinary
+// function as CheckInRewardTier mutator.
+type CheckInRewardTierFunc func(context.Context, *ent.CheckInRewardTierMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CheckInRewardTierFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CheckInRewardTierMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CheckInRewardTierMutation", m)
+}
+
 // The ErrorPassthroughRuleFunc type is an adapter to allow the use of ordinary
 // function as ErrorPassthroughRule mutator.
 type ErrorPassthroughRuleFunc func(context.Context, *ent.ErrorPassthroughRuleMutation) (ent.Value, error)

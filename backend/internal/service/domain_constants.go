@@ -486,6 +486,26 @@ const (
 
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
+
+	// =========================
+	// 每日签到送余额 (Daily Check-in Reward)
+	// =========================
+	SettingKeyCheckInEnabled           = "checkin_enabled"             // 每日签到功能总开关（默认开启）
+	SettingKeyCheckInMinReward         = "checkin_min_reward"          // 单次最小奖励（默认 0.01）
+	SettingKeyCheckInMaxReward         = "checkin_max_reward"          // 单次最大奖励（默认 5.00）
+	SettingKeyCheckInBaseCap           = "checkin_base_cap"            // 奖励区间基础上限（默认 0.20）
+	SettingKeyCheckInWeightRecharge    = "checkin_weight_recharge"     // 充值维度权重（默认 0.5）
+	SettingKeyCheckInWeightUsage       = "checkin_weight_usage"        // 用量维度权重（默认 0.25）
+	SettingKeyCheckInWeightActivity    = "checkin_weight_activity"     // 活跃维度权重（默认 0.25）
+	SettingKeyCheckInRechargeCap       = "checkin_recharge_cap"        // 充值维度归一化上限（默认 200）
+	SettingKeyCheckInUsageCap          = "checkin_usage_cap"           // 用量维度归一化上限（默认 50）
+	SettingKeyCheckInStreakCap         = "checkin_streak_cap"          // 连续签到封顶天数（默认 7）
+	SettingKeyCheckInBetaMin           = "checkin_beta_min"            // 幂律分布 beta 下界（默认 1.0）
+	SettingKeyCheckInBetaMax           = "checkin_beta_max"            // 幂律分布 beta 上界（默认 3.0）
+	SettingKeyCheckInDailyBudget       = "checkin_daily_budget"        // 全站每日奖励预算（默认 0=不限）
+	SettingKeyCheckInUserMonthlyCap    = "checkin_user_monthly_cap"    // 单用户月度奖励上限（默认 0=不限）
+	SettingKeyCheckInMinAccountAgeDays = "checkin_min_account_age_days" // 参与签到的最小账号注册天数（默认 0）
+	SettingKeyCheckInRequireRecharge   = "checkin_require_recharge"    // 是否要求已充值才能签到（默认 false）
 )
 
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。
