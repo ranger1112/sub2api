@@ -1035,11 +1035,13 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			// 重启不丢(镜像 OpenAI 的 codex_* 快照)。降级(401/403/429 带 ErrorCode)不落库,
 			// 避免把一次错误写成账面状态。写入是 fire-and-forget,getKiroUsage 的 3min 缓存已天然限频。
 			if account != nil && usage != nil && usage.Error == "" && usage.ErrorCode == "" {
-				// 低额度告警:用量跨过阈值的那一刻发邮件。oldPct 取上次落库值(边沿去重),
-				// 先算再落库,避免把新值当旧值。
-				if s.balanceNotifyService != nil && usage.FiveHour != nil {
-					oldPct := parseExtraFloat64(account.Extra["kiro_usage_used_percent"])
-					s.balanceNotifyService.CheckUpstreamWindowUsage(context.Background(), account, oldPct, usage.FiveHour.Utilization)
+				// 低额度告警:用量达阈值时发邮件,按窗口 reset 时间进程内去重(每窗口一封)。
+				if s.balanceNotifyService != nil && usage.FiveHour != nil && usage.FiveHour.LimitRequests > 0 {
+					resetAt := ""
+					if usage.FiveHour.ResetsAt != nil {
+						resetAt = usage.FiveHour.ResetsAt.UTC().Format(time.RFC3339)
+					}
+					s.balanceNotifyService.CheckUpstreamWindowUsage(context.Background(), account, usage.FiveHour.Utilization, resetAt)
 				}
 				if updates := buildKiroUsageExtraUpdates(usage, time.Now()); len(updates) > 0 {
 					s.persistKiroUsageSnapshot(account.ID, updates)
@@ -1082,12 +1084,13 @@ func buildKiroUsageExtraUpdates(usage *UsageInfo, now time.Time) map[string]any 
 	if usage.SubscriptionTier != "" {
 		updates["kiro_subscription_tier"] = usage.SubscriptionTier
 	}
-	if p := usage.FiveHour; p != nil {
+	// 仅在有「有意义的额度」(limit>0)时写用量:limit<=0(如 OVERAGE 零额度占位行被 Primary 选中)
+	// 时 Utilization 恒为 0,若写入会把之前"已耗尽(100%)"的好快照覆盖成 0% → 误把耗尽账号重新
+	// 调度。此时只留 tier + updated_at,用量键保持旧值(JSONB 合并)。
+	if p := usage.FiveHour; p != nil && p.LimitRequests > 0 {
 		updates["kiro_usage_used_percent"] = p.Utilization
-		if p.UsedRequests > 0 || p.LimitRequests > 0 {
-			updates["kiro_usage_used"] = p.UsedRequests
-			updates["kiro_usage_limit"] = p.LimitRequests
-		}
+		updates["kiro_usage_used"] = p.UsedRequests
+		updates["kiro_usage_limit"] = p.LimitRequests
 		if p.ResetsAt != nil {
 			updates["kiro_usage_reset_at"] = p.ResetsAt.UTC().Format(time.RFC3339)
 		}

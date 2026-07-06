@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,6 +44,10 @@ type BalanceNotifyService struct {
 	settingRepo              SettingRepository
 	accountRepo              AccountQuotaReader
 	notificationEmailService *NotificationEmailService
+	// upstreamWindowAlerted 记录每个账号「上次告警的窗口 reset 时间」(account.ID → resetAt string),
+	// 用于上游订阅窗口低额度告警的进程内去重:每个窗口只发一次,且不依赖异步落库(落库失败也不重发),
+	// 窗口滚动(reset 变化)自动重新武装。重启清空(最多重发一次,可接受)。
+	upstreamWindowAlerted sync.Map
 }
 
 // NewBalanceNotifyService creates a new BalanceNotifyService.
@@ -218,22 +223,31 @@ const upstreamWindowAlertEmailTemplate = `<!DOCTYPE html>
 <p>请及时关注该账号额度,避免请求被上游限流。<br/>Please review this account's quota to avoid upstream rate limiting.</p>
 </body></html>`
 
-// upstreamWindowUsageCrossed 判断用量是否「跨过」告警阈值(上升边沿):旧值未达、新值达到。
-// 边沿语义即天然去重——跨越后新值落库,下次 old ≥ 阈值不再触发。
-func upstreamWindowUsageCrossed(oldPct, newPct, threshold float64) bool {
-	return oldPct < threshold && newPct >= threshold
+// claimUpstreamWindowAlert 尝试为某账号的当前窗口(以 windowResetAt 标识)占位一次告警。
+// 返回 true 表示占位成功(本窗口尚未告警,调用方应发送);false 表示本窗口已告警过(应跳过)。
+// 窗口 reset 变化 → 视为新窗口,重新武装。进程内状态,重启清空。
+func (s *BalanceNotifyService) claimUpstreamWindowAlert(accountID int64, windowResetAt string) bool {
+	if prev, ok := s.upstreamWindowAlerted.Load(accountID); ok {
+		if ps, _ := prev.(string); ps == windowResetAt {
+			return false
+		}
+	}
+	s.upstreamWindowAlerted.Store(accountID, windowResetAt)
+	return true
 }
 
-// CheckUpstreamWindowUsage 在账号「上游订阅窗口用量」跨过告警阈值(默认 90%)的那一刻发一封告警邮件。
-// 复用账号限额通知的全局开关与收件人(SettingKeyAccountQuotaNotifyEnabled / ...Emails)。
-// 去重靠「跨阈值边沿」:oldPct(上次落库的 used_percent)< 阈值 且 newPct ≥ 阈值 才触发;触发后新值
-// 随即落库,下次 old ≥ 阈值 → 不再重发(每次窗口跨越只发一封)。目前由 Kiro 用量刷新触发
-// (newPct = 订阅窗口 used_percent);getKiroUsage 的 3min 缓存天然限频。
-func (s *BalanceNotifyService) CheckUpstreamWindowUsage(ctx context.Context, account *Account, oldPct, newPct float64) {
+// CheckUpstreamWindowUsage 在账号「上游订阅窗口用量」达到告警阈值(默认 90%)时发一封告警邮件,
+// 每个窗口只发一次。去重用进程内 guard(account.ID → 上次告警的窗口 reset 时间):
+//   - 不依赖异步落库,故落库失败也不会重复发(旧的"跨阈值边沿+落库"方案在落库失败时会反复重发);
+//   - 窗口滚动(windowResetAt 变化)自动重新武装,故新窗口耗尽能再次告警(旧方案会漏发)。
+//
+// 复用账号限额通知的全局开关与收件人。目前由 Kiro 用量刷新触发(usedPercent = 订阅窗口 used_percent,
+// windowResetAt = 窗口重置时间 RFC3339,可空)。getKiroUsage 的 singleflight+3min 缓存保证无并发同号调用。
+func (s *BalanceNotifyService) CheckUpstreamWindowUsage(ctx context.Context, account *Account, usedPercent float64, windowResetAt string) {
 	if account == nil || s.emailService == nil || s.settingRepo == nil {
 		return
 	}
-	if !upstreamWindowUsageCrossed(oldPct, newPct, kiroUpstreamQuotaAlertThreshold) {
+	if usedPercent < kiroUpstreamQuotaAlertThreshold {
 		return
 	}
 	if !s.isAccountQuotaNotifyEnabled(ctx) {
@@ -243,8 +257,12 @@ func (s *BalanceNotifyService) CheckUpstreamWindowUsage(ctx context.Context, acc
 	if len(adminEmails) == 0 {
 		return
 	}
+	// 每窗口只发一次(进程内去重;窗口 reset 变化即重新武装)。先占位再发,发失败也不重发。
+	if !s.claimUpstreamWindowAlert(account.ID, windowResetAt) {
+		return
+	}
 	siteName := s.getSiteName(ctx)
-	accountID, accountName, platform, usedPercent := account.ID, account.Name, account.Platform, newPct
+	accountID, accountName, platform := account.ID, account.Name, account.Platform
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
