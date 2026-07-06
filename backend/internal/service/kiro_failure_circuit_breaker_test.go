@@ -16,15 +16,15 @@ func TestKiroFailureCircuitBreaker_ConsecutiveConnTrips(t *testing.T) {
 			t.Fatalf("tripped too early at consecutive %d", i+1)
 		}
 	}
-	until, reason, tripped := b.recordFailure(1, true, now.Add(3*time.Second))
+	until, reason, tripped := b.recordFailure(1, true, now.Add(10*time.Second))
 	if !tripped {
 		t.Fatal("should trip on Nth consecutive connection failure")
 	}
 	if reason == "" {
 		t.Fatal("trip reason should be non-empty")
 	}
-	if d := until.Sub(now); d < 29*time.Minute || d > 31*time.Minute {
-		t.Fatalf("cooldown = %v, want ~30min", d)
+	if d := until.Sub(now); d < 9*time.Minute || d > 11*time.Minute {
+		t.Fatalf("cooldown = %v, want ~10min", d)
 	}
 }
 
@@ -41,13 +41,14 @@ func TestKiroFailureCircuitBreaker_NonConnResetsConsecutive(t *testing.T) {
 }
 
 // TestKiroFailureCircuitBreaker_WindowThresholdTrips 窗口内 M 次任意瞬时失败 → trip
-//（交替 conn/非 conn 使连续计数不达标,靠窗口阈值触发)。
+// （交替 conn/非 conn 使连续计数不达标,靠窗口阈值触发)。
 func TestKiroFailureCircuitBreaker_WindowThresholdTrips(t *testing.T) {
 	b := newKiroFailureCircuitBreaker()
 	now := time.Now()
 	var tripped bool
-	for i, k := range []bool{true, false, true, false, true} {
-		_, _, tripped = b.recordFailure(2, k, now.Add(time.Duration(i)*time.Second))
+	// 交替 conn/非 conn 使连续计数不达标(最多到 1),靠窗口阈值触发。
+	for i := 0; i < kiroCircuitWindowThreshold; i++ {
+		_, _, tripped = b.recordFailure(2, i%2 == 0, now.Add(time.Duration(i)*time.Second))
 	}
 	if !tripped {
 		t.Fatalf("should trip on %d failures within the window", kiroCircuitWindowThreshold)

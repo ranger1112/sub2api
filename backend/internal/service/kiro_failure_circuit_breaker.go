@@ -14,10 +14,14 @@ import (
 // 只统计「瞬时」失败(5xx / 连接级);账号级状态(401/402/403/429/529)已进 RateLimitService
 // 健康态机器,不重复统计。纯计数,重启清空。
 const (
-	kiroCircuitWindow          = 5 * time.Minute  // 滑动窗口
-	kiroCircuitCooldown        = 30 * time.Minute // trip 后临时下线时长
-	kiroCircuitConsecutiveN    = 3                // 连续 N 次连接级失败 → trip
-	kiroCircuitWindowThreshold = 5                // 窗口内 M 次任意瞬时失败 → trip
+	kiroCircuitWindow   = 5 * time.Minute  // 滑动窗口
+	kiroCircuitCooldown = 10 * time.Minute // trip 后临时下线时长
+	// 阈值必须显著大于 failover 的同账号重试上限(maxSameAccountRetries=3):一次客户端请求对
+	// 同一账号最多产生 3 次瞬时失败(连接级/503 会被同账号重试 3 次),若阈值 ≤ 3,单个请求就能
+	// 触发下线;更糟的是全局上游故障时,失败循环会把整池账号逐个"打挂"30 分钟。取 >2× 重试上限,
+	// 保证单请求不触发、需跨多个请求的持续失败才 trip(cooldown 也缩短到 10min 以限制误触的影响面)。
+	kiroCircuitConsecutiveN    = 6  // 连续 N 次连接级失败 → trip
+	kiroCircuitWindowThreshold = 10 // 窗口内 M 次任意瞬时失败 → trip
 )
 
 type kiroFailureState struct {

@@ -298,15 +298,21 @@ func kiroSameAccountRetryable(status int) bool {
 }
 
 // classifyKiroUpstreamError 解析 Kiro Forward 错误,返回上游状态码、响应体、响应头,以及是否可 failover 重试。
-// 可重试:429、5xx(>=500)上游状态,或连接级(网络)错误。
-// 终止:4xx 客户端错误(400/401/403/404 等)、请求构造/转换错误、context 取消等。
+// 可重试(跨账号):401 / 403 / 429 / 5xx(>=500)上游状态,或连接级(网络)错误——这些是「账号级」
+// 问题(token 失效 / 权限 / 限流 / 上游抖动),换个健康账号常能成功(与 AntigravityGatewayService
+// 的 shouldFailoverUpstreamError 对齐:401/403/429/529/5xx 均 failover)。401/403 同时也进健康态机器
+// 做冷却/禁用(见 kiroStatusEntersHealthState),两者互补。
+// 终止(不 failover):400/404 等客户端错误、请求构造/转换错误、context 取消等。
 func classifyKiroUpstreamError(err error) (status int, body []byte, headers http.Header, retryable bool) {
 	var ue *kiro.UpstreamError
 	if errors.As(err, &ue) {
 		if ue.Body != "" {
 			body = []byte(ue.Body)
 		}
-		retryable = ue.StatusCode == http.StatusTooManyRequests || ue.StatusCode >= 500
+		retryable = ue.StatusCode == http.StatusUnauthorized || // 401
+			ue.StatusCode == http.StatusForbidden || // 403
+			ue.StatusCode == http.StatusTooManyRequests || // 429
+			ue.StatusCode >= 500
 		return ue.StatusCode, body, ue.Headers, retryable
 	}
 	if isKiroConnectionError(err) {

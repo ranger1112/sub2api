@@ -910,7 +910,8 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	// 都是把账号写 rate_limit_reset_at,由平台无关的调度器在冷却期内跳过、到点自动恢复。
 	if account.Platform == PlatformKiro {
 		now := time.Now()
-		if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil && resetAt.After(now) {
+		resetAt := parseRetryAfterResetTime(headers, now)
+		if resetAt != nil && resetAt.After(now) {
 			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
 			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
 				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
@@ -919,7 +920,12 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			slog.Info("kiro_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt, "reset_in", time.Until(*resetAt).Truncate(time.Second))
 			return
 		}
-		s.apply429FallbackRateLimit(ctx, account, "kiro_no_retry_after")
+		// 区分「没有 Retry-After」与「Retry-After 是过去时间(已失效)」,便于观测。
+		reason := "kiro_no_retry_after"
+		if resetAt != nil {
+			reason = "kiro_retry_after_in_past"
+		}
+		s.apply429FallbackRateLimit(ctx, account, reason)
 		return
 	}
 	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）

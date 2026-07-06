@@ -274,9 +274,9 @@ func TestKiroStatusEntersHealthState(t *testing.T) {
 	}
 }
 
-// TestKiroGatewayService_Forward403RoutesToHealthState 验证:非 429 的账号级错误(此处 403)
-// 也路由进 HandleUpstreamError(与 401/402/529 同),不再像旧逻辑那样只 failover 不落状态。
-func TestKiroGatewayService_Forward403RoutesToHealthState(t *testing.T) {
+// TestKiroGatewayService_Forward403FailsOver 验证:403 既路由进 HandleUpstreamError(账号级冷却/禁用),
+// 又返回 *UpstreamFailoverError(跨账号 failover,与 Antigravity 对齐)——两者互补。同样适用 401。
+func TestKiroGatewayService_Forward403FailsOver(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rt := &kiroRespRoundTripper{status: http.StatusForbidden, body: `{"message":"forbidden"}`}
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
@@ -290,9 +290,16 @@ func TestKiroGatewayService_Forward403RoutesToHealthState(t *testing.T) {
 	acc.ID = 88
 	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":10,"stream":true,"messages":[{"role":"user","content":"x"}]}`)
 
-	_, _ = svc.Forward(context.Background(), c, acc, body, false)
+	_, err := svc.Forward(context.Background(), c, acc, body, false)
 	if spy.calls != 1 || spy.status != http.StatusForbidden {
 		t.Fatalf("403 must route to HandleUpstreamError: calls=%d status=%d", spy.calls, spy.status)
+	}
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		t.Fatalf("403 must fail over (cross-account), got %v", err)
+	}
+	if failoverErr.RetryableOnSameAccount {
+		t.Fatal("403 must be cross-account failover, not same-account retry")
 	}
 }
 
@@ -367,13 +374,14 @@ func TestKiroGatewayService_ForwardServerErrorFailsOver(t *testing.T) {
 	}
 }
 
-// TestKiroGatewayService_ForwardTerminalClientErrorNoFailover 验证:非重试客户端错误(403)
-// 保持终止行为——写出映射后的 JSON 错误,返回原始错误(非 failover),并记录 http_error 遥测。
+// TestKiroGatewayService_ForwardTerminalClientErrorNoFailover 验证:真正的终止性客户端错误(400)
+// 不 failover——写出映射后的 JSON 错误,返回原始错误(非 failover),并记录 http_error 遥测。
+// (401/403 现已改为可 failover,见 TestKiroGatewayService_Forward403FailsOver;此处用 400 覆盖终止路径。)
 func TestKiroGatewayService_ForwardTerminalClientErrorNoFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := newKiroServiceWithRT(&kiroRespRoundTripper{
-		status: http.StatusForbidden,
-		body:   `{"message":"forbidden","reason":"MONTHLY_REQUEST_COUNT"}`,
+		status: http.StatusBadRequest,
+		body:   `{"message":"bad request"}`,
 	})
 
 	rec := httptest.NewRecorder()
@@ -386,11 +394,11 @@ func TestKiroGatewayService_ForwardTerminalClientErrorNoFailover(t *testing.T) {
 	}
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
-		t.Fatalf("403 must be terminal, got failover error: %v", err)
+		t.Fatalf("400 must be terminal, got failover error: %v", err)
 	}
 	// 真实上游状态码应被透传,且改写为 JSON(非 SSE)。
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403", rec.Code)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("content-type = %q, want application/json", ct)
@@ -400,10 +408,10 @@ func TestKiroGatewayService_ForwardTerminalClientErrorNoFailover(t *testing.T) {
 		t.Fatalf("error body not JSON: %s", rec.Body.String())
 	}
 	e, _ := out["error"].(map[string]any)
-	if e["type"] != "permission_error" {
-		t.Fatalf("error type = %v, want permission_error", e["type"])
+	if e["type"] != "invalid_request_error" {
+		t.Fatalf("error type = %v, want invalid_request_error", e["type"])
 	}
-	assertKiroOpsEvent(t, c, http.StatusForbidden, "http_error")
+	assertKiroOpsEvent(t, c, http.StatusBadRequest, "http_error")
 }
 
 // TestKiroGatewayService_ForwardConnectionErrorFailsOver 验证:连接级(网络)错误在首字节前
