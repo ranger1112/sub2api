@@ -20,6 +20,8 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 	var stopReason, stopSequence any
 	var inputTokens any
 	var creditUsage, creditUnit any
+	var cacheReadTokens, cacheCreationTokens, cacheCreationDetail any
+	var haveDeltaUsage bool
 	outputTokens := 0
 
 	for _, e := range events {
@@ -76,6 +78,7 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 				stopSequence = d["stop_sequence"]
 			}
 			if u, ok := e.Data["usage"].(map[string]any); ok {
+				haveDeltaUsage = true
 				if v, ok := u["input_tokens"]; ok {
 					inputTokens = v
 				}
@@ -86,6 +89,10 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 				if v, ok := u["credit_unit"]; ok {
 					creditUnit = v
 				}
+				// 缓存计数以 message_delta 为权威口径(按真实 total reconcile);缺失记为 nil 以便覆盖。
+				cacheReadTokens = u["cache_read_input_tokens"]
+				cacheCreationTokens = u["cache_creation_input_tokens"]
+				cacheCreationDetail = u["cache_creation"]
 			}
 		}
 	}
@@ -116,9 +123,26 @@ func AssembleMessage(events []SSEEvent) map[string]any {
 	if creditUnit != nil {
 		usage["credit_unit"] = creditUnit
 	}
+	// 非流式:message_start.usage 的缓存字段按「估算 total」reconcile,而 message_delta 按「真实
+	// total」reconcile(与计费一致)。用 delta 的缓存字段覆盖 start 的,避免返回体里 cache_* 与
+	// input_tokens 不同口径、且与账单对不上(缺失即删除,不留下过时的估算 scale 值)。
+	if haveDeltaUsage {
+		assignOrDelete(usage, "cache_read_input_tokens", cacheReadTokens)
+		assignOrDelete(usage, "cache_creation_input_tokens", cacheCreationTokens)
+		assignOrDelete(usage, "cache_creation", cacheCreationDetail)
+	}
 	message["usage"] = usage
 
 	return message
+}
+
+// assignOrDelete 存在(非 nil)则赋值,不存在则删除——用权威来源覆盖旧字段。
+func assignOrDelete(m map[string]any, k string, v any) {
+	if v == nil {
+		delete(m, k)
+		return
+	}
+	m[k] = v
 }
 
 // eventIndex 把 SSE 事件里的数值字段(int / int64 / float64)转成 int。
