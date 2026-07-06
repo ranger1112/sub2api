@@ -216,7 +216,9 @@ Kiro 走账号绑定的代理:`KiroHTTPClientFactory` = `repository.CreateKiroHT
 
 > 该服务已在 wire 中注册,但**尚未接入 admin 路由/handler**(为后续配额展示端点预留)。接入时新增一个 admin handler 调用 `KiroQuotaService.FetchUsage` 即可。
 
-> **⚠️ 已知限制 / TODO(用量窗口端点按账号类型分叉)**:`getUsageLimits` 目前只给 **external_idp** 账号改走了 Kiro 管理网关 `management.{region}.kiro.dev`(见 `buildExternalIdpUsageLimitsRequest`,真机验证可出数)。**social / idc 账号仍走老的 `q.amazonaws.com/getUsageLimits`,实测返回空**,因此前端用量窗口对 social/idc 显示 `-`。这**不是** free/pro 等级问题(external_idp PRO 账号正常出数)。修复方式:用一条**健康的 social/idc 账号**抓包(mitmproxy)确认其 `getUsageLimits` 的真实端点 + `TokenType`,再在 `BuildUsageLimitsRequest` 加对应分支——**不要凭空猜端点**。
+> **用量窗口端点按账号类型分叉(已解决 2026-07-06)**:`getUsageLimits` 按账号类型走两条路:
+> - **external_idp / 企业**:GovernanceService 解析出 `controlPlaneEndpoint = management.{region}.kiro.dev`,走 Kiro 管理网关(GET,`KiroControlPlaneBearerService.GetUsageLimits`),见 `buildExternalIdpUsageLimitsRequest`。
+> - **social / idc(BuilderId)**:`controlPlaneEndpoint = (none)`,走 AWS 直连 `q.{region}.amazonaws.com`。关键:这是 **AWS-JSON 1.0 RPC** 操作 `AmazonCodeWhispererService.GetUsageLimits`——`POST /`(根路径)+ `x-amz-target` + `Content-Type: application/x-amz-json-1.0`,**不是** REST 的 `POST /getUsageLimits`(后者 200 返回 `UnknownOperationException`,即此前"返回空"的真因)。已按此修 `BuildUsageLimitsRequest`,并用真机 BuilderId/free 账号端到端验证出数(`KIRO FREE`,CREDIT 14/50 INVOCATIONS)。真实端点来自 Kiro 打包代码 `kiro.kiro-agent/dist/extension.js`(两套 GetUsageLimits command)+ token 探测,非猜测。
 
 ### 计量与用量:token 为估算,cache 为合成,credit 为真实
 
