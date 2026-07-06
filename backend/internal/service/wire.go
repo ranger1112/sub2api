@@ -64,6 +64,7 @@ func ProvideTokenRefreshService(
 	geminiOAuthService *GeminiOAuthService,
 	antigravityOAuthService *AntigravityOAuthService,
 	grokOAuthService *GrokOAuthService,
+	kiroOAuthService *KiroOAuthService,
 	cacheInvalidator TokenCacheInvalidator,
 	schedulerCache SchedulerCache,
 	cfg *config.Config,
@@ -76,6 +77,8 @@ func ProvideTokenRefreshService(
 	svc := NewTokenRefreshService(accountRepo, oauthService, openaiOAuthService, geminiOAuthService, antigravityOAuthService, cacheInvalidator, schedulerCache, cfg, tempUnschedCache, grokOAuthService)
 	// 注入 OpenAI privacy opt-out 依赖
 	svc.SetPrivacyDeps(privacyClientFactory, proxyRepo)
+	// 注册 Kiro 后台刷新器（此前 Kiro 只在请求热路径按需刷新，无后台主动刷新/禁用）
+	svc.SetKiroRefresher(NewKiroTokenRefresher(kiroOAuthService))
 	// 注入统一 OAuth 刷新 API（消除 TokenRefreshService 与 TokenProvider 之间的竞争条件）
 	svc.SetRefreshAPI(refreshAPI)
 	// 调用侧显式注入后台刷新策略，避免策略漂移

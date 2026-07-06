@@ -44,7 +44,7 @@ func (r *kiroErrRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 
 func newKiroServiceWithRT(rt http.RoundTripper) *KiroGatewayService {
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
-	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), nil)
+	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), nil, nil)
 }
 
 // kiroTestFrame 构造一个可被 pkg/kiro 解码的 AWS Event Stream 帧(用于伪造上游响应)。
@@ -75,7 +75,7 @@ func kiroTestFrame(eventType, payload string) []byte {
 func newKiroGatewayServiceForTest(body string) *KiroGatewayService {
 	rt := &kiroFakeRoundTripper{status: 200, body: body}
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
-	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), nil)
+	return NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), nil, nil)
 }
 
 func kiroAPIKeyAccount() *Account {
@@ -206,7 +206,7 @@ func TestKiroGatewayService_Forward429PersistsRateLimit(t *testing.T) {
 	rt := &kiroRespRoundTripper{status: http.StatusTooManyRequests, body: `{"message":"rate limited"}`, header: hdr}
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
 	spy := &kiroRateLimiterSpy{}
-	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy)
+	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy, nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -242,7 +242,7 @@ func TestKiroGatewayService_ForwardServerErrorNoRateLimit(t *testing.T) {
 	rt := &kiroRespRoundTripper{status: http.StatusInternalServerError, body: `{"message":"boom"}`}
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
 	spy := &kiroRateLimiterSpy{}
-	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy)
+	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy, nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -281,7 +281,7 @@ func TestKiroGatewayService_Forward403RoutesToHealthState(t *testing.T) {
 	rt := &kiroRespRoundTripper{status: http.StatusForbidden, body: `{"message":"forbidden"}`}
 	clientFor := func(string) (*http.Client, error) { return &http.Client{Transport: rt}, nil }
 	spy := &kiroRateLimiterSpy{}
-	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy)
+	svc := NewKiroGatewayService(NewKiroTokenProvider(nil, nil), clientFor, kiro.DefaultClientConfig(), kiro.NewCacheTracker(), spy, nil)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

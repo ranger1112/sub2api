@@ -30,13 +30,23 @@ type KiroGatewayService struct {
 	cfg              kiro.ClientConfig
 	cacheTracker     *kiro.CacheTracker
 	rateLimitService KiroRateLimiter
+	accountRepo      AccountRepository          // 仅用于熔断 trip 时 SetTempUnschedulable
+	breaker          *kiroFailureCircuitBreaker // 重复瞬时失败(5xx/连接级)熔断
 }
 
-func NewKiroGatewayService(tokenProvider *KiroTokenProvider, clientFor KiroHTTPClientFactory, cfg kiro.ClientConfig, cacheTracker *kiro.CacheTracker, rateLimitService KiroRateLimiter) *KiroGatewayService {
+func NewKiroGatewayService(tokenProvider *KiroTokenProvider, clientFor KiroHTTPClientFactory, cfg kiro.ClientConfig, cacheTracker *kiro.CacheTracker, rateLimitService KiroRateLimiter, accountRepo AccountRepository) *KiroGatewayService {
 	if clientFor == nil {
 		clientFor = func(string) (*http.Client, error) { return http.DefaultClient, nil }
 	}
-	return &KiroGatewayService{tokenProvider: tokenProvider, clientFor: clientFor, cfg: cfg, cacheTracker: cacheTracker, rateLimitService: rateLimitService}
+	return &KiroGatewayService{
+		tokenProvider:    tokenProvider,
+		clientFor:        clientFor,
+		cfg:              cfg,
+		cacheTracker:     cacheTracker,
+		rateLimitService: rateLimitService,
+		accountRepo:      accountRepo,
+		breaker:          newKiroFailureCircuitBreaker(),
+	}
 }
 
 // ProvideKiroCacheTracker 提供进程级单例的合成提示词缓存追踪器(wire）。
@@ -111,9 +121,12 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 			// 首字节前失败(如客户端类 4xx):SSE 头尚未提交,改写为带真实上游状态的 JSON 错误。
 			// 若流已开始,writeUpstreamError 会自行 no-op,交由上层追加 SSE error 事件。
 			s.writeUpstreamError(c, streamErr)
-		} else if cacheProfile != nil {
-			// 上游成功:把本轮可缓存前缀写入缓存表,供后续轮次命中。
-			s.cacheTracker.Update(account.ID, cacheProfile)
+		} else {
+			// 上游成功:清零熔断计数,并把本轮可缓存前缀写入缓存表,供后续轮次命中。
+			s.breaker.reset(account.ID)
+			if cacheProfile != nil {
+				s.cacheTracker.Update(account.ID, cacheProfile)
+			}
 		}
 		return s.buildForwardResult(req.Model, res, true, start, cacheRes), streamErr
 	}
@@ -126,6 +139,8 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		s.writeUpstreamError(c, err)
 		return s.buildForwardResult(req.Model, res, false, start, cacheRes), err
 	}
+	// 上游成功:清零熔断计数(即便随后编码/客户端写出失败,上游本身是健康的)。
+	s.breaker.reset(account.ID)
 	c.Writer.Header().Set("Content-Type", "application/json")
 	if encErr := json.NewEncoder(c.Writer).Encode(msg); encErr != nil {
 		return s.buildForwardResult(req.Model, res, false, start, cacheRes), encErr
@@ -206,6 +221,19 @@ func (s *KiroGatewayService) forwardUpstreamFailover(c *gin.Context, account *Ac
 			healthCtx = context.WithoutCancel(c.Request.Context())
 		}
 		s.rateLimitService.HandleUpstreamError(healthCtx, account, status, respHeaders, respBody)
+	}
+
+	// 重复瞬时失败(5xx / 连接级,非账号级)熔断:坏号累计到阈值 → 临时下线,避免每请求都强制换号。
+	// 账号级状态(401/402/403/429/529)已进健康态机器,不在此重复统计。连接级(status 0)计入「连续」阈值。
+	// detached ctx 避免客户端中途断连导致 SetTempUnschedulable 写入被取消。
+	if s.breaker != nil && retryable && !kiroStatusEntersHealthState(status) {
+		if until, reason, tripped := s.breaker.recordFailure(account.ID, status == 0, time.Now()); tripped && s.accountRepo != nil {
+			breakerCtx := context.Background()
+			if c.Request != nil {
+				breakerCtx = context.WithoutCancel(c.Request.Context())
+			}
+			_ = s.accountRepo.SetTempUnschedulable(breakerCtx, account.ID, until, reason)
+		}
 	}
 
 	requestID := kiroUpstreamRequestID(respHeaders)

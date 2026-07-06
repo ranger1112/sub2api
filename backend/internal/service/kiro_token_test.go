@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 )
 
@@ -73,6 +74,42 @@ type kiroFakeOAuthSvc struct {
 
 func (f *kiroFakeOAuthSvc) RefreshAccountCredentials(ctx context.Context, account *Account) (map[string]any, error) {
 	return f.creds, f.err
+}
+
+// TestTokenRefreshService_SetKiroRefresher 验证 #4:注册后 Kiro OAuth 账号被后台刷新服务纳管
+// (追加进 refreshers + executors),注册前不纳管,nil 是 no-op。
+func TestTokenRefreshService_SetKiroRefresher(t *testing.T) {
+	svc := NewTokenRefreshService(nil, nil, nil, nil, nil, nil, nil, &config.Config{}, nil)
+	kiroAcc := &Account{ID: 1, Platform: PlatformKiro, Type: AccountTypeOAuth}
+
+	before := len(svc.refreshers)
+	execBefore := len(svc.executors)
+	for _, r := range svc.refreshers {
+		if r.CanRefresh(kiroAcc) {
+			t.Fatal("Kiro should not be refreshable before registration")
+		}
+	}
+
+	svc.SetKiroRefresher(NewKiroTokenRefresher(&kiroFakeOAuthSvc{}))
+	if len(svc.refreshers) != before+1 || len(svc.executors) != execBefore+1 {
+		t.Fatalf("SetKiroRefresher should append to both lists: refreshers %d->%d, executors %d->%d",
+			before, len(svc.refreshers), execBefore, len(svc.executors))
+	}
+
+	found := false
+	for _, r := range svc.refreshers {
+		if r.CanRefresh(kiroAcc) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Kiro OAuth account should be refreshable after SetKiroRefresher")
+	}
+
+	svc.SetKiroRefresher(nil) // no-op
+	if len(svc.refreshers) != before+1 {
+		t.Fatalf("nil refresher should be a no-op, got %d", len(svc.refreshers))
+	}
 }
 
 func TestKiroTokenRefresher_CanRefresh(t *testing.T) {
