@@ -58,8 +58,9 @@ func TestHandle429_KiroFallbackCooldownWhenNoRetryAfter(t *testing.T) {
 	if repo.calls != 1 || repo.rateLimitedID != 56 {
 		t.Fatalf("SetRateLimited calls=%d id=%d, want 1 / 56 (fallback cooldown)", repo.calls, repo.rateLimitedID)
 	}
-	if !repo.resetAt.After(before) {
-		t.Fatalf("resetAt %v not after %v (expected default cooldown window)", repo.resetAt, before)
+	// settingService 为 nil → get429FallbackCooldown 返回代码默认常量(30min)。
+	if d := repo.resetAt.Sub(before); d < 29*time.Minute || d > 31*time.Minute {
+		t.Fatalf("fallback cooldown = %v, want ~30min (defaultRateLimit429CooldownSeconds)", d)
 	}
 }
 

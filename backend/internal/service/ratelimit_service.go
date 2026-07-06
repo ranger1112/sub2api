@@ -63,7 +63,7 @@ type geminiUsageTotalsBatchProvider interface {
 const geminiPrecheckCacheTTL = time.Minute
 
 const (
-	defaultRateLimit429CooldownSeconds = 5
+	defaultRateLimit429CooldownSeconds = 1800 // 30min:上游 429 无可解析重置时间时的兜底暂停(主要作用于 Kiro)
 	maxRateLimit429CooldownSeconds     = 7200
 )
 

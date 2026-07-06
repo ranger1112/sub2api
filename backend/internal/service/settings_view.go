@@ -480,11 +480,13 @@ func DefaultOverloadCooldownSettings() *OverloadCooldownSettings {
 	}
 }
 
-// DefaultRateLimit429CooldownSettings 返回默认的429回避配置（启用，5秒）
+// DefaultRateLimit429CooldownSettings 返回默认的429回避配置（启用，30分钟）。
+// 该默认用于上游 429 未携带可解析的重置时间(reset / Retry-After)时的兜底暂停时长——
+// 实际主要作用于 Kiro(其 429 无 Retry-After 时才走此兜底;有 Retry-After 时按其精确暂停)。
 func DefaultRateLimit429CooldownSettings() *RateLimit429CooldownSettings {
 	return &RateLimit429CooldownSettings{
 		Enabled:         true,
-		CooldownSeconds: 5,
+		CooldownSeconds: 1800,
 	}
 }
 
