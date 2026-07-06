@@ -2786,8 +2786,14 @@ func (s *GatewayService) withWindowCostPrefetch(ctx context.Context, accounts []
 }
 
 // isAccountSchedulableForQuota 检查账号是否在配额限制内
-// 适用于配置了 quota_limit 的 apikey 和 bedrock 类型账号
+// 适用于配置了 quota_limit 的 apikey 和 bedrock 类型账号;
+// Kiro 账号额外按落库的订阅窗口用量做「主动跳过」(耗尽即不再选中,避免明知会 429 仍下发)。
 func (s *GatewayService) isAccountSchedulableForQuota(account *Account) bool {
+	// Kiro:上游订阅窗口(请求数)耗尽 → 主动跳过(带 reset/陈旧度自愈,见 kiroQuotaExhausted)。
+	// 这是唯一收口:路由 Layer1 / 粘性 Layer1.5 / Layer2 负载感知 / 各 legacy 选号路径都经此。
+	if account.Platform == PlatformKiro && kiroQuotaExhausted(account, time.Now()) {
+		return false
+	}
 	if !account.IsAPIKeyOrBedrock() {
 		return true
 	}
