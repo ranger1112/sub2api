@@ -225,6 +225,31 @@ func (s *CheckInAdminService) DeleteTier(ctx context.Context, id int64) error {
 	return nil
 }
 
+// validateRewardBand enforces the five shared reward-band invariants (plus the
+// absolute-max backstop) common to both a tier and the global config. The caller
+// supplies its own reason code so tier and config violations stay distinguishable.
+func validateRewardBand(reason string, minReward, maxReward, baseCap, betaMin, betaMax float64) error {
+	if minReward <= 0 {
+		return infraerrors.BadRequest(reason, "min_reward must be > 0")
+	}
+	if maxReward < minReward {
+		return infraerrors.BadRequest(reason, "max_reward must be >= min_reward")
+	}
+	if maxReward > checkInAbsoluteMaxReward {
+		return infraerrors.BadRequest(reason, "max_reward exceeds the absolute maximum")
+	}
+	if baseCap < minReward || baseCap > maxReward {
+		return infraerrors.BadRequest(reason, "base_cap must be within [min_reward, max_reward]")
+	}
+	if betaMin < 0 {
+		return infraerrors.BadRequest(reason, "beta_min must be >= 0")
+	}
+	if betaMax < betaMin {
+		return infraerrors.BadRequest(reason, "beta_max must be >= beta_min")
+	}
+	return nil
+}
+
 // validateCheckInTier enforces the reward-band invariants for a tier.
 func validateCheckInTier(t *CheckInRewardTier) error {
 	if strings.TrimSpace(t.Name) == "" {
@@ -236,22 +261,7 @@ func validateCheckInTier(t *CheckInRewardTier) error {
 	if t.MatchThreshold < 0 {
 		return infraerrors.BadRequest("CHECKIN_TIER_INVALID", "match_threshold must be >= 0")
 	}
-	if t.MinReward <= 0 {
-		return infraerrors.BadRequest("CHECKIN_TIER_INVALID", "min_reward must be > 0")
-	}
-	if t.MaxReward < t.MinReward {
-		return infraerrors.BadRequest("CHECKIN_TIER_INVALID", "max_reward must be >= min_reward")
-	}
-	if t.BaseCap < t.MinReward || t.BaseCap > t.MaxReward {
-		return infraerrors.BadRequest("CHECKIN_TIER_INVALID", "base_cap must be within [min_reward, max_reward]")
-	}
-	if t.BetaMin < 0 {
-		return infraerrors.BadRequest("CHECKIN_TIER_INVALID", "beta_min must be >= 0")
-	}
-	if t.BetaMax < t.BetaMin {
-		return infraerrors.BadRequest("CHECKIN_TIER_INVALID", "beta_max must be >= beta_min")
-	}
-	return nil
+	return validateRewardBand("CHECKIN_TIER_INVALID", t.MinReward, t.MaxReward, t.BaseCap, t.BetaMin, t.BetaMax)
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +347,7 @@ func (s *CheckInAdminService) UpdateCheckInConfig(ctx context.Context, cv *Check
 	cfg.sanitize()
 
 	updates := map[string]string{
-		SettingKeyCheckInEnabled:           formatCheckInBool(cfg.enabled),
+		SettingKeyCheckInEnabled:           strconv.FormatBool(cfg.enabled),
 		SettingKeyCheckInMinReward:         formatCheckInFloat(cfg.minReward),
 		SettingKeyCheckInMaxReward:         formatCheckInFloat(cfg.maxReward),
 		SettingKeyCheckInBaseCap:           formatCheckInFloat(cfg.baseCap),
@@ -352,7 +362,7 @@ func (s *CheckInAdminService) UpdateCheckInConfig(ctx context.Context, cv *Check
 		SettingKeyCheckInDailyBudget:       formatCheckInFloat(cfg.dailyBudget),
 		SettingKeyCheckInUserMonthlyCap:    formatCheckInFloat(cfg.userMonthlyCap),
 		SettingKeyCheckInMinAccountAgeDays: strconv.Itoa(cfg.minAccountAgeDays),
-		SettingKeyCheckInRequireRecharge:   formatCheckInBool(cfg.requireRecharge),
+		SettingKeyCheckInRequireRecharge:   strconv.FormatBool(cfg.requireRecharge),
 	}
 	if err := s.settingRepo.SetMultiple(ctx, updates); err != nil {
 		return fmt.Errorf("persist check-in config: %w", err)
@@ -362,14 +372,8 @@ func (s *CheckInAdminService) UpdateCheckInConfig(ctx context.Context, cv *Check
 
 // validateCheckInConfig enforces strict admin config invariants.
 func validateCheckInConfig(cv *CheckInConfigValues) error {
-	if cv.MinReward <= 0 {
-		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "min_reward must be > 0")
-	}
-	if cv.MaxReward < cv.MinReward {
-		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "max_reward must be >= min_reward")
-	}
-	if cv.BaseCap < cv.MinReward || cv.BaseCap > cv.MaxReward {
-		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "base_cap must be within [min_reward, max_reward]")
+	if err := validateRewardBand("CHECKIN_CONFIG_INVALID", cv.MinReward, cv.MaxReward, cv.BaseCap, cv.BetaMin, cv.BetaMax); err != nil {
+		return err
 	}
 	if cv.WeightRecharge < 0 || cv.WeightUsage < 0 || cv.WeightActivity < 0 {
 		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "weights must be >= 0")
@@ -379,12 +383,6 @@ func validateCheckInConfig(cv *CheckInConfigValues) error {
 	}
 	if cv.StreakCap < 1 {
 		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "streak_cap must be >= 1")
-	}
-	if cv.BetaMin < 0 {
-		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "beta_min must be >= 0")
-	}
-	if cv.BetaMax < cv.BetaMin {
-		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "beta_max must be >= beta_min")
 	}
 	if cv.DailyBudget < 0 || cv.UserMonthlyCap < 0 {
 		return infraerrors.BadRequest("CHECKIN_CONFIG_INVALID", "budgets must be >= 0")
@@ -467,11 +465,4 @@ func checkInIntValue(vals map[string]string, key string, def int) int {
 
 func formatCheckInFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
-}
-
-func formatCheckInBool(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
 }

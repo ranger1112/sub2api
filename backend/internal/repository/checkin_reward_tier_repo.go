@@ -81,8 +81,16 @@ func (r *checkInRewardTierRepository) Update(ctx context.Context, tier *service.
 
 func (r *checkInRewardTierRepository) Delete(ctx context.Context, id int64) error {
 	client := clientFromContext(ctx, r.client)
-	_, err := client.CheckInRewardTier.Delete().Where(checkinrewardtier.IDEQ(id)).Exec(ctx)
-	return err
+	n, err := client.CheckInRewardTier.Delete().Where(checkinrewardtier.IDEQ(id)).Exec(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		// No row matched: report the same typed not-found used by GetByID/Update so the
+		// handler maps it to 404 instead of a misleading success.
+		return service.ErrCheckInTierNotFound
+	}
+	return nil
 }
 
 func (r *checkInRewardTierRepository) List(ctx context.Context) ([]service.CheckInRewardTier, error) {

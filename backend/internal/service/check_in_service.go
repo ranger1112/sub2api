@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"strconv"
-	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -42,6 +40,11 @@ const (
 	defaultCheckInUserMonthlyCap    = 0.0
 	defaultCheckInMinAccountAgeDays = 0
 	defaultCheckInRequireRecharge   = false
+
+	// checkInAbsoluteMaxReward is a hard sanity backstop against fat-finger
+	// misconfiguration of any admin-supplied max_reward (config or tier). No single
+	// check-in reward may ever be configured above this ceiling.
+	checkInAbsoluteMaxReward = 10000.0
 
 	// checkInDateLayout is the DATE layout shared by app-timezone day boundaries.
 	checkInDateLayout = "2006-01-02"
@@ -183,34 +186,22 @@ func (s *CheckInService) Claim(ctx context.Context, userID int64) (*ClaimResult,
 		return nil, ErrCheckInDisabled
 	}
 
-	// Eligibility: account status + optional account-age / require-recharge gates.
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
-	if user.Status != StatusActive {
-		return nil, ErrCheckInNotEligible
-	}
 	now := timezone.Now()
-	if cfg.minAccountAgeDays > 0 {
-		ageDays := int(now.Sub(user.CreatedAt).Hours() / 24)
-		if ageDays < cfg.minAccountAgeDays {
-			return nil, ErrCheckInNotEligible
-		}
-	}
 
+	// Recharge is needed both for the eligibility gate and as a score input / snapshot.
 	recharge, err := s.checkInRepo.SumRechargeByUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("sum recharge: %w", err)
 	}
-	if cfg.requireRecharge && recharge <= 0 {
+	if !checkEligibility(cfg, user, recharge, now) {
 		return nil, ErrCheckInNotEligible
 	}
 
-	// Streak: compare latest record's date against today/yesterday.
 	todayStr := now.Format(checkInDateLayout)
-	yesterdayStr := now.AddDate(0, 0, -1).Format(checkInDateLayout)
-
 	latest, err := s.checkInRepo.GetLatestRecord(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get latest check-in: %w", err)
@@ -218,40 +209,16 @@ func (s *CheckInService) Claim(ctx context.Context, userID int64) (*ClaimResult,
 	if latest != nil && latest.CheckInDate.Format(checkInDateLayout) == todayStr {
 		return nil, ErrCheckInAlreadyClaimed
 	}
-	newStreak := 1
-	if latest != nil && latest.CheckInDate.Format(checkInDateLayout) == yesterdayStr {
-		newStreak = latest.StreakCount + 1
-	}
 
-	usage30d, err := s.checkInRepo.SumUsageActualCostSince(ctx, userID, now.AddDate(0, 0, -30))
+	// Resolve the per-user reward context (streak, score inputs, effective tier band).
+	// Shared with GetStatus so eligibility and the advertised band can't drift from
+	// what a claim actually draws.
+	rc, err := s.computeUserRewardContext(ctx, cfg, userID, now, latest, recharge)
 	if err != nil {
-		return nil, fmt.Errorf("sum usage: %w", err)
-	}
-	// Active-days window: last 7 days including today (today-6days .. today).
-	windowStartStr := now.AddDate(0, 0, -6).Format(checkInDateLayout)
-	activeDays, err := s.checkInRepo.CountActiveDaysSince(ctx, userID, windowStartStr)
-	if err != nil {
-		// CountActiveDaysSince already fails soft, but never let it break check-in.
-		activeDays = 0
+		return nil, err
 	}
 
-	score := computeCheckInScore(cfg, recharge, usage30d, newStreak, activeDays)
-
-	// Resolve the effective reward band from enabled tiers. Best-effort: a tier-table
-	// hiccup must never break a claim, so on any error we log and fall back to the
-	// global config unchanged.
-	var tiers []CheckInRewardTier
-	if s.tierRepo != nil {
-		loaded, terr := s.tierRepo.ListEnabled(ctx)
-		if terr != nil {
-			logger.LegacyPrintf("service.checkin", "[CheckIn] list enabled reward tiers failed, using global config: %v", terr)
-		} else {
-			tiers = loaded
-		}
-	}
-	eff := s.resolveRewardBand(cfg, tiers, recharge, score)
-
-	reward, err := computeCheckInReward(eff, score)
+	reward, err := computeCheckInReward(rc.eff, rc.score)
 	if err != nil {
 		return nil, fmt.Errorf("compute reward: %w", err)
 	}
@@ -271,7 +238,7 @@ func (s *CheckInService) Claim(ctx context.Context, userID int64) (*ClaimResult,
 		if remaining := cfg.userMonthlyCap - monthSum; reward > remaining {
 			reward = remaining
 		}
-		if reward < eff.minReward {
+		if reward < rc.eff.minReward {
 			return nil, ErrCheckInMonthlyCapReached
 		}
 	}
@@ -286,23 +253,27 @@ func (s *CheckInService) Claim(ctx context.Context, userID int64) (*ClaimResult,
 		if remaining := cfg.dailyBudget - todaySum; reward > remaining {
 			reward = remaining
 		}
-		if reward < eff.minReward {
+		if reward < rc.eff.minReward {
 			return nil, ErrCheckInBudgetExhausted
 		}
 	}
 	// Re-round to cents after any budget trimming, then re-clamp so the final
-	// credited amount is unconditionally within [minReward, maxReward] (> 0).
+	// credited amount is unconditionally within the RESOLVED tier band [minReward,
+	// maxReward] (> 0). rc.eff.maxReward is already <= cfg.maxReward (global clamp in
+	// resolveRewardBand), so the global ceiling still holds; using rc.eff prevents a
+	// sub-global-min tier from being bumped up above its own ceiling and a
+	// budget-trimmed amount from being re-inflated above the remaining budget.
 	reward = math.Round(reward*100) / 100
-	reward = clampFloat64(reward, cfg.minReward, cfg.maxReward)
+	reward = clampFloat64(reward, rc.eff.minReward, rc.eff.maxReward)
 
 	newBalance, claimed, err := s.checkInRepo.ClaimDailyReward(ctx, ClaimInput{
 		UserID:           userID,
 		CheckInDate:      todayStr,
 		RewardAmount:     reward,
-		StreakCount:      newStreak,
-		Score:            score,
+		StreakCount:      rc.newStreak,
+		Score:            rc.score,
 		RechargeSnapshot: recharge,
-		UsageSnapshot:    usage30d,
+		UsageSnapshot:    rc.usage30d,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("claim daily reward: %w", err)
@@ -317,7 +288,7 @@ func (s *CheckInService) Claim(ctx context.Context, userID int64) (*ClaimResult,
 	return &ClaimResult{
 		RewardAmount: reward,
 		NewBalance:   newBalance,
-		Streak:       newStreak,
+		Streak:       rc.newStreak,
 		CheckInDate:  todayStr,
 	}, nil
 }
@@ -326,39 +297,48 @@ func (s *CheckInService) Claim(ctx context.Context, userID int64) (*ClaimResult,
 func (s *CheckInService) GetStatus(ctx context.Context, userID int64) (*StatusResult, error) {
 	cfg := s.loadConfig(ctx)
 
+	// Disabled: return a minimal read model and skip all per-user queries.
+	if !cfg.enabled {
+		return &StatusResult{
+			Enabled:   false,
+			MinReward: cfg.minReward,
+			MaxReward: cfg.maxReward,
+			History:   []CheckInHistoryItem{},
+		}, nil
+	}
+
 	now := timezone.Now()
 	todayStr := now.Format(checkInDateLayout)
 	yesterdayStr := now.AddDate(0, 0, -1).Format(checkInDateLayout)
 
-	latest, err := s.checkInRepo.GetLatestRecord(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("get latest check-in: %w", err)
-	}
-	checkedToday := latest != nil && latest.CheckInDate.Format(checkInDateLayout) == todayStr
-
-	// Lightweight eligibility (mirrors Claim gates so can_check_in is truthful).
-	eligible := true
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
-	if user.Status != StatusActive {
-		eligible = false
+
+	// Recharge feeds both the eligibility gate and the effective-band resolution.
+	recharge, err := s.checkInRepo.SumRechargeByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("sum recharge: %w", err)
 	}
-	if eligible && cfg.minAccountAgeDays > 0 {
-		ageDays := int(now.Sub(user.CreatedAt).Hours() / 24)
-		if ageDays < cfg.minAccountAgeDays {
-			eligible = false
-		}
+	eligible := checkEligibility(cfg, user, recharge, now)
+
+	// Derive the latest record from the history list (records[0]) rather than a
+	// separate GetLatestRecord query — the history is ordered desc by check_in_date.
+	records, err := s.checkInRepo.ListByUser(ctx, userID, 20)
+	if err != nil {
+		return nil, fmt.Errorf("list check-in history: %w", err)
 	}
-	if eligible && cfg.requireRecharge {
-		recharge, err := s.checkInRepo.SumRechargeByUser(ctx, userID)
-		if err != nil {
-			return nil, fmt.Errorf("sum recharge: %w", err)
-		}
-		if recharge <= 0 {
-			eligible = false
-		}
+	var latest *CheckInRecord
+	if len(records) > 0 {
+		latest = &records[0]
+	}
+	checkedToday := latest != nil && latest.CheckInDate.Format(checkInDateLayout) == todayStr
+
+	// Effective band: advertise the range a claim would actually draw for this user.
+	rc, err := s.computeUserRewardContext(ctx, cfg, userID, now, latest, recharge)
+	if err != nil {
+		return nil, err
 	}
 
 	streak := 0
@@ -386,10 +366,6 @@ func (s *CheckInService) GetStatus(ctx context.Context, userID int64) (*StatusRe
 		nextAvailableAt = &next
 	}
 
-	records, err := s.checkInRepo.ListByUser(ctx, userID, 20)
-	if err != nil {
-		return nil, fmt.Errorf("list check-in history: %w", err)
-	}
 	history := make([]CheckInHistoryItem, 0, len(records))
 	for i := range records {
 		history = append(history, CheckInHistoryItem{
@@ -408,9 +384,82 @@ func (s *CheckInService) GetStatus(ctx context.Context, userID int64) (*StatusRe
 		LastCheckInDate: lastCheckInDate,
 		TotalReward:     totalReward,
 		NextAvailableAt: nextAvailableAt,
-		MinReward:       cfg.minReward,
-		MaxReward:       cfg.maxReward,
+		MinReward:       rc.eff.minReward,
+		MaxReward:       rc.eff.maxReward,
 		History:         history,
+	}, nil
+}
+
+// userRewardContext bundles the per-user inputs shared by Claim (the reward draw)
+// and GetStatus (the advertised band): the resolved effective tier band plus the
+// raw score inputs. Computing it once keeps the two paths from drifting.
+type userRewardContext struct {
+	eff       checkInConfig
+	recharge  float64
+	usage30d  float64
+	newStreak int
+	score     float64
+}
+
+// checkEligibility applies the three shared claim gates — active status, minimum
+// account age, and optional require-recharge — so Claim and GetStatus can't drift.
+func checkEligibility(cfg checkInConfig, user *User, recharge float64, now time.Time) bool {
+	if user.Status != StatusActive {
+		return false
+	}
+	if cfg.minAccountAgeDays > 0 {
+		ageDays := int(now.Sub(user.CreatedAt).Hours() / 24)
+		if ageDays < cfg.minAccountAgeDays {
+			return false
+		}
+	}
+	if cfg.requireRecharge && recharge <= 0 {
+		return false
+	}
+	return true
+}
+
+// computeUserRewardContext derives the streak, loads the score inputs (usage +
+// active days), computes the composite score, and overlays the best-matching enabled
+// reward tier onto cfg. Best-effort: a tier-table error never breaks the flow (it
+// logs and keeps the global config), and CountActiveDaysSince already fails soft.
+func (s *CheckInService) computeUserRewardContext(ctx context.Context, cfg checkInConfig, userID int64, now time.Time, latest *CheckInRecord, recharge float64) (userRewardContext, error) {
+	yesterdayStr := now.AddDate(0, 0, -1).Format(checkInDateLayout)
+	newStreak := 1
+	if latest != nil && latest.CheckInDate.Format(checkInDateLayout) == yesterdayStr {
+		newStreak = latest.StreakCount + 1
+	}
+
+	usage30d, err := s.checkInRepo.SumUsageActualCostSince(ctx, userID, now.AddDate(0, 0, -30))
+	if err != nil {
+		return userRewardContext{}, fmt.Errorf("sum usage: %w", err)
+	}
+	// Active-days window: last 7 days including today (today-6days .. today).
+	windowStartStr := now.AddDate(0, 0, -6).Format(checkInDateLayout)
+	activeDays, aerr := s.checkInRepo.CountActiveDaysSince(ctx, userID, windowStartStr)
+	if aerr != nil {
+		activeDays = 0
+	}
+
+	score := computeCheckInScore(cfg, recharge, usage30d, newStreak, activeDays)
+
+	var tiers []CheckInRewardTier
+	if s.tierRepo != nil {
+		loaded, terr := s.tierRepo.ListEnabled(ctx)
+		if terr != nil {
+			logger.LegacyPrintf("service.checkin", "[CheckIn] list enabled reward tiers failed, using global config: %v", terr)
+		} else {
+			tiers = loaded
+		}
+	}
+	eff := s.resolveRewardBand(cfg, tiers, recharge, score)
+
+	return userRewardContext{
+		eff:       eff,
+		recharge:  recharge,
+		usage30d:  usage30d,
+		newStreak: newStreak,
+		score:     score,
 	}, nil
 }
 
@@ -437,6 +486,15 @@ func (s *CheckInService) invalidateCheckInCaches(ctx context.Context, userID int
 //	A = 0.5*min(streak,streakCap)/streakCap + 0.5*min(activeDays,7)/7
 //	S = clamp( wR*R + wU*U + wA*A, 0, 1 )
 func computeCheckInScore(cfg checkInConfig, recharge, usage30d float64, newStreak, activeDays int) float64 {
+	// Defensive: recharge and usage30d are non-negative sums. A corrupt/negative
+	// aggregate must never reach math.Log (which would yield NaN and could taint a
+	// credited balance), so clamp them to >= 0 before the log-scaled terms.
+	if recharge < 0 {
+		recharge = 0
+	}
+	if usage30d < 0 {
+		usage30d = 0
+	}
 	R := 0.0
 	if cfg.rechargeCap > 0 {
 		R = clampFloat64(math.Log(1+recharge)/math.Log(1+cfg.rechargeCap), 0, 1)
@@ -483,6 +541,11 @@ func computeCheckInReward(cfg checkInConfig, score float64) (float64, error) {
 		return 0, err
 	}
 	reward := cfg.minReward + (c-cfg.minReward)*math.Pow(u, beta)
+	// Belt-and-suspenders: a NaN/Inf draw (e.g. from a degenerate config that slipped
+	// past sanitize) must never reach the balance; fall back to the floor before clamp.
+	if math.IsNaN(reward) || math.IsInf(reward, 0) {
+		reward = cfg.minReward
+	}
 	reward = math.Round(reward*100) / 100
 	// Guarantee reward > 0 and <= maxReward.
 	reward = clampFloat64(reward, cfg.minReward, cfg.maxReward)
@@ -540,7 +603,10 @@ func checkInTierBetter(a, b *CheckInRewardTier) bool {
 	if a.SortOrder != b.SortOrder {
 		return a.SortOrder > b.SortOrder
 	}
-	if a.MatchThreshold != b.MatchThreshold {
+	// Thresholds are only comparable within the same match_type: recharge thresholds
+	// are dollars while score thresholds live on a 0..1 scale, so ranking across types
+	// by raw magnitude is meaningless. Cross-type ties fall through to id.
+	if a.MatchType == b.MatchType && a.MatchThreshold != b.MatchThreshold {
 		return a.MatchThreshold > b.MatchThreshold
 	}
 	return a.ID > b.ID
@@ -557,25 +623,33 @@ func cryptoRandFloat64() (float64, error) {
 	return float64(v) / float64(uint64(1)<<53), nil
 }
 
-// loadConfig resolves all check-in settings, falling back to defaults on missing/invalid values.
+// loadConfig resolves all check-in settings in a single GetMultiple round-trip,
+// falling back to defaults on missing/invalid values. Parsing reuses the map-based
+// parsers in checkin_reward_tier.go (one source of truth for setting parsing).
 func (s *CheckInService) loadConfig(ctx context.Context) checkInConfig {
+	var vals map[string]string
+	if s.settingRepo != nil {
+		if loaded, err := s.settingRepo.GetMultiple(ctx, checkInSettingKeys()); err == nil {
+			vals = loaded
+		}
+	}
 	cfg := checkInConfig{
-		enabled:           s.boolSetting(ctx, SettingKeyCheckInEnabled, defaultCheckInEnabled),
-		minReward:         s.floatSetting(ctx, SettingKeyCheckInMinReward, defaultCheckInMinReward),
-		maxReward:         s.floatSetting(ctx, SettingKeyCheckInMaxReward, defaultCheckInMaxReward),
-		baseCap:           s.floatSetting(ctx, SettingKeyCheckInBaseCap, defaultCheckInBaseCap),
-		weightRecharge:    s.floatSetting(ctx, SettingKeyCheckInWeightRecharge, defaultCheckInWeightRecharge),
-		weightUsage:       s.floatSetting(ctx, SettingKeyCheckInWeightUsage, defaultCheckInWeightUsage),
-		weightActivity:    s.floatSetting(ctx, SettingKeyCheckInWeightActivity, defaultCheckInWeightActivity),
-		rechargeCap:       s.floatSetting(ctx, SettingKeyCheckInRechargeCap, defaultCheckInRechargeCap),
-		usageCap:          s.floatSetting(ctx, SettingKeyCheckInUsageCap, defaultCheckInUsageCap),
-		streakCap:         s.intSetting(ctx, SettingKeyCheckInStreakCap, defaultCheckInStreakCap),
-		betaMin:           s.floatSetting(ctx, SettingKeyCheckInBetaMin, defaultCheckInBetaMin),
-		betaMax:           s.floatSetting(ctx, SettingKeyCheckInBetaMax, defaultCheckInBetaMax),
-		dailyBudget:       s.floatSetting(ctx, SettingKeyCheckInDailyBudget, defaultCheckInDailyBudget),
-		userMonthlyCap:    s.floatSetting(ctx, SettingKeyCheckInUserMonthlyCap, defaultCheckInUserMonthlyCap),
-		minAccountAgeDays: s.intSetting(ctx, SettingKeyCheckInMinAccountAgeDays, defaultCheckInMinAccountAgeDays),
-		requireRecharge:   s.boolSetting(ctx, SettingKeyCheckInRequireRecharge, defaultCheckInRequireRecharge),
+		enabled:           checkInBoolValue(vals, SettingKeyCheckInEnabled, defaultCheckInEnabled),
+		minReward:         checkInFloatValue(vals, SettingKeyCheckInMinReward, defaultCheckInMinReward),
+		maxReward:         checkInFloatValue(vals, SettingKeyCheckInMaxReward, defaultCheckInMaxReward),
+		baseCap:           checkInFloatValue(vals, SettingKeyCheckInBaseCap, defaultCheckInBaseCap),
+		weightRecharge:    checkInFloatValue(vals, SettingKeyCheckInWeightRecharge, defaultCheckInWeightRecharge),
+		weightUsage:       checkInFloatValue(vals, SettingKeyCheckInWeightUsage, defaultCheckInWeightUsage),
+		weightActivity:    checkInFloatValue(vals, SettingKeyCheckInWeightActivity, defaultCheckInWeightActivity),
+		rechargeCap:       checkInFloatValue(vals, SettingKeyCheckInRechargeCap, defaultCheckInRechargeCap),
+		usageCap:          checkInFloatValue(vals, SettingKeyCheckInUsageCap, defaultCheckInUsageCap),
+		streakCap:         checkInIntValue(vals, SettingKeyCheckInStreakCap, defaultCheckInStreakCap),
+		betaMin:           checkInFloatValue(vals, SettingKeyCheckInBetaMin, defaultCheckInBetaMin),
+		betaMax:           checkInFloatValue(vals, SettingKeyCheckInBetaMax, defaultCheckInBetaMax),
+		dailyBudget:       checkInFloatValue(vals, SettingKeyCheckInDailyBudget, defaultCheckInDailyBudget),
+		userMonthlyCap:    checkInFloatValue(vals, SettingKeyCheckInUserMonthlyCap, defaultCheckInUserMonthlyCap),
+		minAccountAgeDays: checkInIntValue(vals, SettingKeyCheckInMinAccountAgeDays, defaultCheckInMinAccountAgeDays),
+		requireRecharge:   checkInBoolValue(vals, SettingKeyCheckInRequireRecharge, defaultCheckInRequireRecharge),
 	}
 	cfg.sanitize()
 	return cfg
@@ -590,6 +664,9 @@ func (c *checkInConfig) sanitize() {
 	if c.minReward <= 0 {
 		c.minReward = defaultCheckInMinReward
 	}
+	// Absolute backstop against fat-finger misconfig; applied before the min/max repair
+	// below so the max >= min invariant still holds afterward.
+	c.maxReward = math.Min(c.maxReward, checkInAbsoluteMaxReward)
 	if c.maxReward < c.minReward {
 		// Prefer the sane default ceiling; if minReward itself exceeds it, collapse to a point.
 		c.maxReward = defaultCheckInMaxReward
@@ -607,60 +684,4 @@ func (c *checkInConfig) sanitize() {
 	if c.betaMax < c.betaMin {
 		c.betaMax = c.betaMin
 	}
-}
-
-func (s *CheckInService) boolSetting(ctx context.Context, key string, def bool) bool {
-	if s.settingRepo == nil {
-		return def
-	}
-	raw, err := s.settingRepo.GetValue(ctx, key)
-	if err != nil {
-		return def
-	}
-	switch strings.TrimSpace(raw) {
-	case "true":
-		return true
-	case "false":
-		return false
-	default:
-		return def
-	}
-}
-
-func (s *CheckInService) floatSetting(ctx context.Context, key string, def float64) float64 {
-	if s.settingRepo == nil {
-		return def
-	}
-	raw, err := s.settingRepo.GetValue(ctx, key)
-	if err != nil {
-		return def
-	}
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return def
-	}
-	v, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return def
-	}
-	return v
-}
-
-func (s *CheckInService) intSetting(ctx context.Context, key string, def int) int {
-	if s.settingRepo == nil {
-		return def
-	}
-	raw, err := s.settingRepo.GetValue(ctx, key)
-	if err != nil {
-		return def
-	}
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return def
-	}
-	v, err := strconv.Atoi(raw)
-	if err != nil {
-		return def
-	}
-	return v
 }

@@ -295,6 +295,7 @@ func TestCreateTier_ValidationRejectsBadInput(t *testing.T) {
 		{"zero min_reward", func(in *CreateCheckInTierInput) { in.MinReward = 0 }},
 		{"negative min_reward", func(in *CreateCheckInTierInput) { in.MinReward = -1 }},
 		{"max below min", func(in *CreateCheckInTierInput) { in.MaxReward = 0.5 }},
+		{"max above absolute ceiling", func(in *CreateCheckInTierInput) { in.MaxReward = checkInAbsoluteMaxReward + 1 }},
 		{"base_cap below min", func(in *CreateCheckInTierInput) { in.BaseCap = 0.5 }},
 		{"base_cap above max", func(in *CreateCheckInTierInput) { in.BaseCap = 10 }},
 		{"negative beta_min", func(in *CreateCheckInTierInput) { in.BetaMin = -1 }},
@@ -380,6 +381,7 @@ func TestUpdateCheckInConfig_ValidationRejectsBadInput(t *testing.T) {
 	}{
 		{"min <= 0", func(cv *CheckInConfigValues) { cv.MinReward = 0 }},
 		{"min > max", func(cv *CheckInConfigValues) { cv.MinReward = 5; cv.MaxReward = 3 }},
+		{"max above absolute ceiling", func(cv *CheckInConfigValues) { cv.MaxReward = checkInAbsoluteMaxReward + 1 }},
 		{"negative weight", func(cv *CheckInConfigValues) { cv.WeightRecharge = -1 }},
 		{"beta_max < beta_min", func(cv *CheckInConfigValues) { cv.BetaMin = 3; cv.BetaMax = 1 }},
 	}
@@ -444,4 +446,95 @@ func TestClaim_WithEnabledTierRewardWithinEffectiveBand(t *testing.T) {
 		require.GreaterOrEqual(t, res.RewardAmount, effMin-1e-9, "reward below effective min")
 		require.LessOrEqual(t, res.RewardAmount, globalMax+1e-9, "reward above global max")
 	}
+}
+
+// F1 regression: when a matched tier's max is BELOW the global min, the final clamp
+// must use the resolved tier band — not the global band — so the reward is never
+// bumped UP to the global min above the tier ceiling (overpay above the tier max).
+func TestClaim_TierMaxBelowGlobalMin_NoOverpay(t *testing.T) {
+	// Global band [1.00, 5.00] via settings; tier band [0.05, 0.20] (recharge >= 0).
+	vals := map[string]string{
+		SettingKeyCheckInMinReward: "1.00",
+		SettingKeyCheckInMaxReward: "5.00",
+	}
+	tierRepo := &fakeCheckInTierRepo{
+		enabled: []CheckInRewardTier{rechargeTier(1, 0, 0.05, 0.20, 0.10)},
+	}
+	userRepo := &fakeCheckInUserRepo{user: activeUser(30)}
+
+	for i := 0; i < 300; i++ {
+		repo := &fakeCheckInRepo{claimed: true, claimBalance: 100}
+		svc := NewCheckInService(repo, tierRepo, userRepo, &fakeCheckInSettingRepo{vals: vals}, nil, nil)
+
+		res, err := svc.Claim(context.Background(), 7)
+
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.LessOrEqual(t, res.RewardAmount, 0.20+1e-9,
+			"reward must stay within the tier ceiling and never be bumped up to the global min")
+	}
+}
+
+// F1 regression: a budget-trimmed reward must not be re-inflated by the final clamp
+// back up to the global min. With a tier min below the remaining budget, the credited
+// reward must never exceed the remaining daily budget.
+func TestClaim_BudgetTrimNotReinflated(t *testing.T) {
+	// Global band [1.00, 5.00]; daily budget 5.25 with 5.00 already gifted today leaves
+	// remaining = 0.25 — below the global min (1.00) but above the tier min (0.05).
+	const remaining = 0.25
+	vals := map[string]string{
+		SettingKeyCheckInMinReward:   "1.00",
+		SettingKeyCheckInMaxReward:   "5.00",
+		SettingKeyCheckInDailyBudget: "5.25",
+	}
+	// Tier band [0.05, 0.50] with a high baseCap so draws frequently exceed the
+	// remaining budget and exercise the trim path.
+	tierRepo := &fakeCheckInTierRepo{
+		enabled: []CheckInRewardTier{rechargeTier(1, 0, 0.05, 0.50, 0.45)},
+	}
+	userRepo := &fakeCheckInUserRepo{user: activeUser(30)}
+
+	for i := 0; i < 300; i++ {
+		repo := &fakeCheckInRepo{claimed: true, claimBalance: 100, todaySum: 5.00}
+		svc := NewCheckInService(repo, tierRepo, userRepo, &fakeCheckInSettingRepo{vals: vals}, nil, nil)
+
+		res, err := svc.Claim(context.Background(), 7)
+
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.LessOrEqual(t, res.RewardAmount, remaining+1e-9,
+			"a budget-trimmed reward must never be re-inflated above the remaining budget")
+	}
+}
+
+// F3 regression: two matching tiers of DIFFERENT match_type with EQUAL sort_order must
+// break the tie deterministically on id — NOT on cross-scale threshold magnitude (which
+// would let the recharge tier's dollar threshold always outrank the score tier).
+func TestResolveRewardBand_EqualSortOrderDifferentTypeBreaksOnID(t *testing.T) {
+	svc := &CheckInService{}
+	cfg := defaultCheckInConfig()
+
+	rt := rechargeTier(1, 50, 1.0, 4.0, 2.0) // recharge tier, id 1
+	rt.SortOrder = 3
+	st := rechargeTier(2, 0.8, 3.0, 4.5, 3.5) // score tier, id 2
+	st.MatchType = CheckInTierMatchScore
+	st.SortOrder = 3
+	tiers := []CheckInRewardTier{rt, st}
+
+	// recharge=100 (>=50) and score=0.9 (>=0.8): both match; equal sort_order + differing
+	// match_type must fall through to id, so the higher-id score tier (min 3.0) wins.
+	eff := svc.resolveRewardBand(cfg, tiers, 100, 0.9)
+	require.Equal(t, 3.0, eff.minReward,
+		"equal sort_order across match types must break on id, not threshold magnitude")
+}
+
+// F6: deleting a non-existent tier must surface the typed not-found error (which the
+// admin handler maps to 404), never a false success.
+func TestDeleteTier_NotFoundPropagates(t *testing.T) {
+	repo := &fakeCheckInTierRepo{deleteErr: ErrCheckInTierNotFound}
+	svc := NewCheckInAdminService(repo, nil, nil)
+
+	err := svc.DeleteTier(context.Background(), 123)
+
+	require.Equal(t, "CHECKIN_TIER_NOT_FOUND", infraerrors.Reason(err))
 }

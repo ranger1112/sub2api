@@ -131,6 +131,18 @@ func (f *fakeCheckInSettingRepo) GetValue(ctx context.Context, key string) (stri
 	return "", ErrSettingNotFound
 }
 
+// GetMultiple backs loadConfig's single-round-trip settings fetch; unset keys are
+// simply absent from the map so the parsers fall back to defaults.
+func (f *fakeCheckInSettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		if v, ok := f.vals[k]; ok {
+			out[k] = v
+		}
+	}
+	return out, nil
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -446,7 +458,7 @@ func TestClaim_DailyBudgetRejectsWhenExhausted(t *testing.T) {
 func TestGetStatus_CheckedInTodayBlocksClaim(t *testing.T) {
 	now := timezone.Now()
 	repo := &fakeCheckInRepo{
-		latest:   &CheckInRecord{CheckInDate: now, StreakCount: 5, RewardAmount: 1.23},
+		history:  []CheckInRecord{{CheckInDate: now, StreakCount: 5, RewardAmount: 1.23}},
 		lifetime: 9.99,
 	}
 	userRepo := &fakeCheckInUserRepo{user: activeUser(30)}
@@ -468,7 +480,7 @@ func TestGetStatus_CheckedInTodayBlocksClaim(t *testing.T) {
 func TestGetStatus_EligibleNotYetClaimed(t *testing.T) {
 	yesterday := timezone.Now().AddDate(0, 0, -1)
 	repo := &fakeCheckInRepo{
-		latest: &CheckInRecord{CheckInDate: yesterday, StreakCount: 2, RewardAmount: 0.5},
+		history: []CheckInRecord{{CheckInDate: yesterday, StreakCount: 2, RewardAmount: 0.5}},
 	}
 	userRepo := &fakeCheckInUserRepo{user: activeUser(30)}
 	svc := newCheckInServiceForTest(repo, userRepo, nil)
@@ -485,7 +497,7 @@ func TestGetStatus_EligibleNotYetClaimed(t *testing.T) {
 func TestGetStatus_StreakDisplayResetsAfterGap(t *testing.T) {
 	old := timezone.Now().AddDate(0, 0, -4)
 	repo := &fakeCheckInRepo{
-		latest: &CheckInRecord{CheckInDate: old, StreakCount: 12, RewardAmount: 2.0},
+		history: []CheckInRecord{{CheckInDate: old, StreakCount: 12, RewardAmount: 2.0}},
 	}
 	userRepo := &fakeCheckInUserRepo{user: activeUser(30)}
 	svc := newCheckInServiceForTest(repo, userRepo, nil)
