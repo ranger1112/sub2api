@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -281,4 +283,86 @@ func (r *checkInRepository) GetAnalytics(ctx context.Context, todayStr, monthSta
 	out.Trend = trend
 
 	return out, nil
+}
+
+// ListRecords returns a page of individual check-in records joined to their user
+// (for email/username), plus the total count of matching rows. All filter values are
+// bound as positional params (never interpolated). The optional date filters compare
+// the 'YYYY-MM-DD' strings against the DATE-typed check_in_date column. User
+// email/username are COALESCE'd to '' when the LEFT JOIN finds no user.
+func (r *checkInRepository) ListRecords(ctx context.Context, params pagination.PaginationParams, filter service.CheckInRecordFilter) ([]service.CheckInRecordDetail, int64, error) {
+	// Build the shared WHERE clause with positional bind params.
+	conds := make([]string, 0, 3)
+	args := make([]any, 0, 5)
+	idx := 1
+	if filter.UserID != nil {
+		conds = append(conds, fmt.Sprintf("cr.user_id = $%d", idx))
+		args = append(args, *filter.UserID)
+		idx++
+	}
+	if filter.StartDate != "" {
+		conds = append(conds, fmt.Sprintf("cr.check_in_date >= $%d::date", idx))
+		args = append(args, filter.StartDate)
+		idx++
+	}
+	if filter.EndDate != "" {
+		conds = append(conds, fmt.Sprintf("cr.check_in_date <= $%d::date", idx))
+		args = append(args, filter.EndDate)
+		idx++
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	var total int64
+	if err := r.sql.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM check_in_records cr`+where, args...,
+	).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count check-in records: %w", err)
+	}
+	if total == 0 {
+		return []service.CheckInRecordDetail{}, 0, nil
+	}
+
+	// Pagination binds follow the filter binds.
+	listArgs := append(append([]any{}, args...), params.Limit(), params.Offset())
+	query := `SELECT cr.id, cr.user_id,
+			COALESCE(u.email, ''), COALESCE(u.username, ''),
+			cr.check_in_date, cr.reward_amount, cr.streak_count, cr.score,
+			cr.recharge_snapshot, cr.usage_snapshot, cr.created_at
+		FROM check_in_records cr
+		LEFT JOIN users u ON u.id = cr.user_id` + where +
+		fmt.Sprintf(" ORDER BY cr.created_at DESC LIMIT $%d OFFSET $%d", idx, idx+1)
+
+	rows, err := r.sql.QueryContext(ctx, query, listArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list check-in records: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]service.CheckInRecordDetail, 0, params.Limit())
+	for rows.Next() {
+		var rec service.CheckInRecordDetail
+		if err := rows.Scan(
+			&rec.ID,
+			&rec.UserID,
+			&rec.UserEmail,
+			&rec.UserUsername,
+			&rec.CheckInDate,
+			&rec.RewardAmount,
+			&rec.StreakCount,
+			&rec.Score,
+			&rec.RechargeSnapshot,
+			&rec.UsageSnapshot,
+			&rec.CreatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scan check-in record detail: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate check-in records: %w", err)
+	}
+	return out, total, nil
 }

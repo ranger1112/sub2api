@@ -6,6 +6,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 
 	"github.com/stretchr/testify/require"
@@ -32,6 +33,10 @@ type fakeCheckInRepo struct {
 	claimed      bool
 	claimErr     error
 
+	listRecords      []CheckInRecordDetail
+	listRecordsTotal int64
+	listRecordsErr   error
+
 	// captured for assertions
 	claimInput           *ClaimInput
 	claimCalls           int
@@ -39,6 +44,8 @@ type fakeCheckInRepo struct {
 	sumUserRewardsHit    bool
 	getLatestCalled      bool
 	sumRechargeCallCount int
+	listRecordsParams    pagination.PaginationParams
+	listRecordsFilter    *CheckInRecordFilter
 }
 
 func (f *fakeCheckInRepo) GetLatestRecord(ctx context.Context, userID int64) (*CheckInRecord, error) {
@@ -86,6 +93,13 @@ func (f *fakeCheckInRepo) GetUserLifetimeReward(ctx context.Context, userID int6
 
 func (f *fakeCheckInRepo) GetAnalytics(ctx context.Context, todayStr, monthStartStr, trendStartStr string) (*CheckInAnalytics, error) {
 	return &CheckInAnalytics{}, nil
+}
+
+func (f *fakeCheckInRepo) ListRecords(ctx context.Context, params pagination.PaginationParams, filter CheckInRecordFilter) ([]CheckInRecordDetail, int64, error) {
+	f.listRecordsParams = params
+	cp := filter
+	f.listRecordsFilter = &cp
+	return f.listRecords, f.listRecordsTotal, f.listRecordsErr
 }
 
 // fakeCheckInUserRepo overrides only the methods the service uses; any other
@@ -518,4 +532,30 @@ func TestGetStatus_DisabledCannotCheckIn(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, st.Enabled)
 	require.False(t, st.CanCheckIn)
+}
+
+// ---------------------------------------------------------------------------
+// Admin ListRecords tests
+// ---------------------------------------------------------------------------
+
+func TestCheckInAdminListRecords_PassesFilterAndReturns(t *testing.T) {
+	want := []CheckInRecordDetail{
+		{ID: 1, UserID: 7, UserEmail: "a@b.com", UserUsername: "alice", RewardAmount: 1.5, StreakCount: 3},
+	}
+	repo := &fakeCheckInRepo{listRecords: want, listRecordsTotal: 42}
+	svc := NewCheckInAdminService(nil, nil, repo)
+
+	uid := int64(7)
+	params := pagination.PaginationParams{Page: 2, PageSize: 10}
+	filter := CheckInRecordFilter{UserID: &uid, StartDate: "2026-07-01", EndDate: "2026-07-07"}
+
+	got, total, err := svc.ListRecords(context.Background(), params, filter)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(42), total)
+	require.Equal(t, want, got)
+	// The service must pass pagination + filter straight through to the repo.
+	require.Equal(t, params, repo.listRecordsParams)
+	require.NotNil(t, repo.listRecordsFilter)
+	require.Equal(t, filter, *repo.listRecordsFilter)
 }

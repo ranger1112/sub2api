@@ -8,6 +8,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
@@ -116,6 +117,31 @@ type CheckInAnalytics struct {
 	DistinctUsersToday int64
 	DistinctUsersMonth int64
 	Trend              []CheckInTrendPoint
+}
+
+// CheckInRecordFilter narrows a ListRecords query. All fields are optional; empty
+// values mean "no filter on this dimension".
+type CheckInRecordFilter struct {
+	UserID    *int64 // optional exact user_id match
+	StartDate string // optional 'YYYY-MM-DD' inclusive lower bound on check_in_date
+	EndDate   string // optional 'YYYY-MM-DD' inclusive upper bound on check_in_date
+}
+
+// CheckInRecordDetail is one check_in_records row joined to its user for the admin
+// records listing (who got how much, when). User email/username are '' when the
+// joined user is missing.
+type CheckInRecordDetail struct {
+	ID               int64
+	UserID           int64
+	UserEmail        string
+	UserUsername     string
+	CheckInDate      time.Time
+	RewardAmount     float64
+	StreakCount      int
+	Score            float64
+	RechargeSnapshot float64
+	UsageSnapshot    float64
+	CreatedAt        time.Time
 }
 
 // CheckInAdminService backs the admin-facing check-in config, analytics and tier CRUD.
@@ -410,6 +436,16 @@ func (s *CheckInAdminService) GetAnalytics(ctx context.Context) (*CheckInAnalyti
 		return nil, fmt.Errorf("get check-in analytics: %w", err)
 	}
 	return analytics, nil
+}
+
+// ListRecords returns a paginated, filtered page of individual check-in records
+// (joined to users) plus the total count of matching rows.
+func (s *CheckInAdminService) ListRecords(ctx context.Context, params pagination.PaginationParams, filter CheckInRecordFilter) ([]CheckInRecordDetail, int64, error) {
+	records, total, err := s.checkInRepo.ListRecords(ctx, params, filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list check-in records: %w", err)
+	}
+	return records, total, nil
 }
 
 // ---------------------------------------------------------------------------

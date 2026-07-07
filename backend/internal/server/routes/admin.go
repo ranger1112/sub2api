@@ -463,6 +463,7 @@ func registerCheckInRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		checkin.GET("/config", h.Admin.CheckIn.GetConfig)
 		checkin.PUT("/config", h.Admin.CheckIn.UpdateConfig)
 		checkin.GET("/analytics", h.Admin.CheckIn.GetAnalytics)
+		checkin.GET("/records", h.Admin.CheckIn.ListRecords)
 		checkin.GET("/tiers", h.Admin.CheckIn.ListTiers)
 		checkin.POST("/tiers", h.Admin.CheckIn.CreateTier)
 		checkin.PUT("/tiers/:id", h.Admin.CheckIn.UpdateTier)

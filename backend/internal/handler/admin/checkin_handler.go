@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -140,6 +141,93 @@ func (h *CheckInHandler) GetAnalytics(c *gin.Context) {
 		"distinct_users_month": analytics.DistinctUsersMonth,
 		"trend":                analytics.Trend,
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Records listing
+// ---------------------------------------------------------------------------
+
+// checkInRecordDTO is the response shape for one individual daily check-in record.
+type checkInRecordDTO struct {
+	ID               int64   `json:"id"`
+	UserID           int64   `json:"user_id"`
+	UserEmail        string  `json:"user_email"`
+	UserUsername     string  `json:"user_username"`
+	CheckInDate      string  `json:"check_in_date"`
+	RewardAmount     float64 `json:"reward_amount"`
+	StreakCount      int     `json:"streak_count"`
+	Score            float64 `json:"score"`
+	RechargeSnapshot float64 `json:"recharge_snapshot"`
+	UsageSnapshot    float64 `json:"usage_snapshot"`
+	CreatedAt        string  `json:"created_at"`
+}
+
+func checkInRecordDTOFromService(r *service.CheckInRecordDetail) checkInRecordDTO {
+	return checkInRecordDTO{
+		ID:               r.ID,
+		UserID:           r.UserID,
+		UserEmail:        r.UserEmail,
+		UserUsername:     r.UserUsername,
+		CheckInDate:      r.CheckInDate.Format("2006-01-02"),
+		RewardAmount:     r.RewardAmount,
+		StreakCount:      r.StreakCount,
+		Score:            r.Score,
+		RechargeSnapshot: r.RechargeSnapshot,
+		UsageSnapshot:    r.UsageSnapshot,
+		CreatedAt:        r.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+// ListRecords returns a paginated, filterable list of individual check-in records,
+// joined to users for email/username, ordered by created_at desc.
+// GET /api/v1/admin/checkin/records
+func (h *CheckInHandler) ListRecords(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	var filter service.CheckInRecordFilter
+
+	if raw := strings.TrimSpace(c.Query("user_id")); raw != "" {
+		userID, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid user_id")
+			return
+		}
+		filter.UserID = &userID
+	}
+	if raw := strings.TrimSpace(c.Query("start_date")); raw != "" {
+		if _, err := time.Parse("2006-01-02", raw); err != nil {
+			response.BadRequest(c, "Invalid start_date, expected YYYY-MM-DD")
+			return
+		}
+		filter.StartDate = raw
+	}
+	if raw := strings.TrimSpace(c.Query("end_date")); raw != "" {
+		if _, err := time.Parse("2006-01-02", raw); err != nil {
+			response.BadRequest(c, "Invalid end_date, expected YYYY-MM-DD")
+			return
+		}
+		filter.EndDate = raw
+	}
+
+	params := pagination.PaginationParams{
+		Page:     page,
+		PageSize: pageSize,
+	}
+
+	records, total, err := h.checkInAdminService.ListRecords(c.Request.Context(), params, filter)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	out := make([]checkInRecordDTO, 0, len(records))
+	for i := range records {
+		out = append(out, checkInRecordDTOFromService(&records[i]))
+	}
+	response.Paginated(c, out, total, page, pageSize)
 }
 
 // ---------------------------------------------------------------------------

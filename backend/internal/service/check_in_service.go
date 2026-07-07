@@ -10,6 +10,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
@@ -97,6 +98,8 @@ type CheckInRepository interface {
 	GetUserLifetimeReward(ctx context.Context, userID int64) (float64, error)
 	// GetAnalytics returns the admin analytics read model (totals, today/month, 30-day trend).
 	GetAnalytics(ctx context.Context, todayStr, monthStartStr, trendStartStr string) (*CheckInAnalytics, error)
+	// ListRecords returns a paginated, filtered page of individual check-in records joined to users.
+	ListRecords(ctx context.Context, params pagination.PaginationParams, filter CheckInRecordFilter) ([]CheckInRecordDetail, int64, error)
 }
 
 // checkInConfig is the resolved runtime configuration for a single request.
