@@ -127,7 +127,7 @@
               >
                 <td
                   class="max-w-[100px] truncate py-1.5 font-medium"
-                  :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'"
+                  :class="enableBreakdown ? 'text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400' : 'text-gray-900 dark:text-white'"
                   :title="model.model"
                 >
                   <span class="inline-flex items-center gap-1">
@@ -339,20 +339,15 @@ const showAccountCost = computed(() => props.showAccountCost)
 const distributionColspan = computed(() => showAccountCost.value ? 6 : 5)
 const activeView = ref<'model_distribution' | 'spending_ranking'>('model_distribution')
 
-const chartColors = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#8b5cf6',
-  '#ec4899',
-  '#14b8a6',
-  '#f97316',
-  '#6366f1',
-  '#84cc16',
-  '#06b6d4',
-  '#a855f7'
-]
+// Linear 冷调雅黑：分布图/排行图不用彩虹色，改灰阶单色梯度（复用 tailwind dark-* 色阶）。
+// 暗色底用浅灰在前逐级压深、亮色底用深灰在前逐级提亮，保证与卡片背景的对比。
+const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
+const DIST_RAMP_DARK = ['#f6f7f8', '#e9eaec', '#cccfd4', '#a1a6ae', '#767c85', '#565b64', '#3d4147', '#26282d', '#17181b']
+const DIST_RAMP_LIGHT = ['#08090a', '#0e0f11', '#17181b', '#26282d', '#3d4147', '#565b64', '#767c85', '#a1a6ae', '#cccfd4']
+const distributionColor = (index: number): string => {
+  const ramp = isDarkMode.value ? DIST_RAMP_DARK : DIST_RAMP_LIGHT
+  return ramp[index % ramp.length]
+}
 
 const displayModelStats = computed(() => {
   const sourceStats = props.source === 'upstream'
@@ -374,8 +369,9 @@ const chartData = computed(() => {
     datasets: [
       {
         data: displayModelStats.value.map((m) => toFiniteNumber(props.metric === 'actual_cost' ? m.actual_cost : m.total_tokens)),
-        backgroundColor: chartColors.slice(0, displayModelStats.value.length),
-        borderWidth: 0
+        backgroundColor: displayModelStats.value.map((_, i) => distributionColor(i)),
+        borderColor: isDarkMode.value ? '#0e0f11' : '#ffffff',
+        borderWidth: 2
       }
     ]
   }
@@ -386,12 +382,12 @@ const rankingChartData = computed(() => {
 
   const labels = props.rankingItems.map((item, index) => `#${index + 1} ${getRankingUserLabel(item)}`)
   const data = props.rankingItems.map((item) => toFiniteNumber(item.actual_cost))
-  const backgroundColor = chartColors.slice(0, props.rankingItems.length)
+  const backgroundColor = props.rankingItems.map((_, i) => distributionColor(i))
 
   if (otherRankingItem.value) {
     labels.push(t('admin.dashboard.spendingRankingOther'))
     data.push(otherRankingItem.value.actual_cost)
-    backgroundColor.push('#94a3b8')
+    backgroundColor.push(isDarkMode.value ? '#a1a6ae' : '#565b64')
   }
 
   return {
@@ -400,7 +396,8 @@ const rankingChartData = computed(() => {
       {
         data,
         backgroundColor,
-        borderWidth: 0
+        borderColor: isDarkMode.value ? '#0e0f11' : '#ffffff',
+        borderWidth: 2
       }
     ]
   }

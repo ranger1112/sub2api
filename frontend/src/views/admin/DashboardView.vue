@@ -490,20 +490,11 @@ const userTrendChartData = computed(() => {
   })
 
   const sortedDates = Array.from(allDates).sort()
-  const colors = [
-    '#3b82f6',
-    '#10b981',
-    '#f59e0b',
-    '#ef4444',
-    '#8b5cf6',
-    '#ec4899',
-    '#14b8a6',
-    '#f97316',
-    '#6366f1',
-    '#84cc16',
-    '#06b6d4',
-    '#a855f7'
-  ]
+  // Linear 冷调雅黑：Top 12 用户趋势线不用彩虹色，改灰阶单色梯度（复用 tailwind dark-* 色阶），
+  // 暗色底浅灰在前、亮色底深灰在前，保证与卡片背景的对比；仅此分布图配色，其余图表/元素不动。
+  const colors = isDarkMode.value
+    ? ['#f6f7f8', '#e9eaec', '#cccfd4', '#a1a6ae', '#767c85', '#565b64', '#3d4147', '#26282d', '#17181b']
+    : ['#08090a', '#0e0f11', '#17181b', '#26282d', '#3d4147', '#565b64', '#767c85', '#a1a6ae', '#cccfd4']
 
   const datasets = Array.from(userGroups.values()).map((group, idx) => ({
     label: group.name,

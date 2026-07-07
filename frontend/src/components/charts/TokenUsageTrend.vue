@@ -58,15 +58,29 @@ const isDarkMode = computed(() => {
   return document.documentElement.classList.contains('dark')
 })
 
-const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb',
-  input: '#3b82f6',
-  output: '#10b981',
-  cacheCreation: '#f59e0b',
-  cacheRead: '#06b6d4',
-  cacheHitRate: '#8b5cf6'
-}))
+// Linear 冷调单色：与 tailwind.config.js 的 dark-* 中性阶保持一致，不用彩虹色。
+// 主指标（Input）用最强对比，其余按重要性依次减弱；Cache Hit Rate 走右轴、用虚线区分，
+// 无需再靠色相区分。
+const chartColors = computed(() => (isDarkMode.value
+  ? {
+      text: '#767c85', // dark-400
+      grid: 'rgba(255, 255, 255, 0.07)',
+      input: '#f6f7f8', // dark-50
+      output: '#a1a6ae', // dark-300
+      cacheCreation: '#565b64', // dark-500
+      cacheRead: '#3d4147', // dark-600
+      cacheHitRate: '#cccfd4' // dark-200, dashed
+    }
+  : {
+      text: '#565b64', // dark-500
+      grid: 'rgba(9, 9, 11, 0.08)',
+      input: '#08090a', // dark-950
+      output: '#3d4147', // dark-600
+      cacheCreation: '#767c85', // dark-400
+      cacheRead: '#a1a6ae', // dark-300
+      cacheHitRate: '#565b64' // dark-500, dashed
+    }
+))
 
 const chartData = computed(() => {
   if (!props.trendData?.length) return null

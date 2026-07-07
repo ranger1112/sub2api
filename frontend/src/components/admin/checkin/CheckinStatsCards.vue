@@ -2,59 +2,59 @@
   <div class="space-y-4">
     <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <div class="card p-4 flex items-center gap-3">
-        <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+        <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
           <Icon name="dollar" size="md" />
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.checkin.analytics.totalGifted') }}
           </p>
-          <p class="text-xl font-bold text-green-600 dark:text-green-400">
+          <p class="font-mono text-xl font-bold tabular-nums tracking-[-0.02em] text-emerald-600 dark:text-emerald-400">
             {{ formatCurrency(analytics?.total_gifted ?? 0) }}
           </p>
         </div>
       </div>
 
       <div class="card p-4 flex items-center gap-3">
-        <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+        <div class="rounded-lg bg-primary-100 p-2 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">
           <Icon name="gift" size="md" />
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.checkin.analytics.todayGifted') }}
           </p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
+          <p class="font-mono text-xl font-bold tabular-nums tracking-[-0.02em] text-gray-900 dark:text-white">
             {{ formatCurrency(analytics?.today_gifted ?? 0) }}
           </p>
         </div>
       </div>
 
       <div class="card p-4 flex items-center gap-3">
-        <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
+        <div class="rounded-lg bg-primary-100 p-2 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">
           <Icon name="calendar" size="md" />
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.checkin.analytics.monthGifted') }}
           </p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
+          <p class="font-mono text-xl font-bold tabular-nums tracking-[-0.02em] text-gray-900 dark:text-white">
             {{ formatCurrency(analytics?.month_gifted ?? 0) }}
           </p>
         </div>
       </div>
 
       <div class="card p-4 flex items-center gap-3">
-        <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400">
+        <div class="rounded-lg bg-primary-100 p-2 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">
           <Icon name="chart" size="md" />
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.checkin.analytics.totalCheckins') }}
           </p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
+          <p class="font-mono text-xl font-bold tabular-nums tracking-[-0.02em] text-gray-900 dark:text-white">
             {{ formatNumber(analytics?.total_checkins ?? 0) }}
           </p>
-          <p class="text-xs text-gray-400">
+          <p class="font-mono text-xs tabular-nums text-gray-400">
             {{ t('admin.checkin.analytics.todayCheckins') }}: {{ formatNumber(analytics?.today_checkins ?? 0) }}
           </p>
         </div>
@@ -63,28 +63,28 @@
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div class="card p-4 flex items-center gap-3">
-        <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+        <div class="rounded-lg bg-primary-100 p-2 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">
           <Icon name="users" size="md" />
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.checkin.analytics.distinctUsersToday') }}
           </p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
+          <p class="font-mono text-xl font-bold tabular-nums tracking-[-0.02em] text-gray-900 dark:text-white">
             {{ formatNumber(analytics?.distinct_users_today ?? 0) }}
           </p>
         </div>
       </div>
 
       <div class="card p-4 flex items-center gap-3">
-        <div class="rounded-lg bg-teal-100 p-2 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400">
+        <div class="rounded-lg bg-primary-100 p-2 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">
           <Icon name="users" size="md" />
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.checkin.analytics.distinctUsersMonth') }}
           </p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
+          <p class="font-mono text-xl font-bold tabular-nums tracking-[-0.02em] text-gray-900 dark:text-white">
             {{ formatNumber(analytics?.distinct_users_month ?? 0) }}
           </p>
         </div>

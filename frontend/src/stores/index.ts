@@ -12,6 +12,8 @@ export { useOnboardingStore } from './onboarding'
 export { useAnnouncementStore } from './announcements'
 export { usePaymentStore } from './payment'
 export { useAdminComplianceStore } from './adminCompliance'
+export { useThemeStore, ACCENTS } from './theme'
+export type { ThemeMode, AccentOption } from './theme'
 
 // Re-export types for convenience
 export type { User, LoginRequest, RegisterRequest, AuthResponse } from '@/types'

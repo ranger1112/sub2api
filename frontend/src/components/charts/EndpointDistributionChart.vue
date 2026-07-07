@@ -93,7 +93,7 @@
                 :class="enableBreakdown ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40' : ''"
                 @click="enableBreakdown && toggleBreakdown(item.endpoint)"
               >
-                <td class="max-w-[180px] truncate py-1.5 font-medium" :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'" :title="item.endpoint">
+                <td class="max-w-[180px] truncate py-1.5 font-medium" :class="enableBreakdown ? 'text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400' : 'text-gray-900 dark:text-white'" :title="item.endpoint">
                   <span class="inline-flex items-center gap-1">
                     <svg v-if="enableBreakdown && expandedKey === item.endpoint" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                     <svg v-else-if="enableBreakdown" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
@@ -211,20 +211,15 @@ const toggleBreakdown = async (endpoint: string) => {
   }
 }
 
-const chartColors = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#8b5cf6',
-  '#ec4899',
-  '#14b8a6',
-  '#f97316',
-  '#6366f1',
-  '#84cc16',
-  '#06b6d4',
-  '#a855f7'
-]
+// Linear 冷调雅黑：分布图不用彩虹色，改灰阶单色梯度（复用 tailwind dark-* 色阶）。
+// 暗色底用浅灰在前逐级压深、亮色底用深灰在前逐级提亮，保证与卡片背景的对比。
+const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
+const DIST_RAMP_DARK = ['#f6f7f8', '#e9eaec', '#cccfd4', '#a1a6ae', '#767c85', '#565b64', '#3d4147', '#26282d', '#17181b']
+const DIST_RAMP_LIGHT = ['#08090a', '#0e0f11', '#17181b', '#26282d', '#3d4147', '#565b64', '#767c85', '#a1a6ae', '#cccfd4']
+const distributionColor = (index: number): string => {
+  const ramp = isDarkMode.value ? DIST_RAMP_DARK : DIST_RAMP_LIGHT
+  return ramp[index % ramp.length]
+}
 
 const displayEndpointStats = computed(() => {
   const sourceStats = props.source === 'upstream'
@@ -248,8 +243,9 @@ const chartData = computed(() => {
         data: displayEndpointStats.value.map((item) =>
           props.metric === 'actual_cost' ? item.actual_cost : item.total_tokens
         ),
-        backgroundColor: chartColors.slice(0, displayEndpointStats.value.length),
-        borderWidth: 0
+        backgroundColor: displayEndpointStats.value.map((_, i) => distributionColor(i)),
+        borderColor: isDarkMode.value ? '#0e0f11' : '#ffffff',
+        borderWidth: 2
       }
     ]
   }

@@ -4,14 +4,14 @@
     <div class="card p-4">
       <div class="flex flex-wrap items-center gap-4">
         <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('dashboard.timeRange') }}:</span>
+          <span class="text-sm font-medium text-gray-700 dark:text-dark-300">{{ t('dashboard.timeRange') }}:</span>
           <DateRangePicker :start-date="startDate" :end-date="endDate" @update:startDate="$emit('update:startDate', $event)" @update:endDate="$emit('update:endDate', $event)" @change="$emit('dateRangeChange', $event)" />
         </div>
         <button @click="$emit('refresh')" :disabled="loading" class="btn btn-secondary">
           {{ t('common.refresh') }}
         </button>
         <div class="ml-auto flex items-center gap-2">
-          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('dashboard.granularity') }}:</span>
+          <span class="text-sm font-medium text-gray-700 dark:text-dark-300">{{ t('dashboard.granularity') }}:</span>
           <div class="w-28">
             <Select :model-value="granularity" :options="[{value:'day', label:t('dashboard.day')}, {value:'hour', label:t('dashboard.hour')}]" @update:model-value="$emit('update:granularity', $event)" @change="$emit('granularityChange')" />
           </div>
@@ -22,34 +22,35 @@
     <!-- Charts Grid -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <!-- Model Distribution Chart -->
-      <div class="card relative overflow-hidden p-4">
-        <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50">
+      <div class="card relative overflow-hidden p-5">
+        <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-900/60">
           <LoadingSpinner size="md" />
         </div>
-        <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
-        <div class="flex items-center gap-6">
-          <div class="h-48 w-48">
+        <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:text-dark-500">Distribution</p>
+        <h3 class="mb-4 mt-1.5 text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
+        <div class="flex items-center gap-5">
+          <div class="h-40 w-40 flex-shrink-0">
             <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
-            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('dashboard.noDataAvailable') }}</div>
+            <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-dark-400">{{ t('dashboard.noDataAvailable') }}</div>
           </div>
-          <div class="max-h-48 flex-1 overflow-y-auto">
+          <div class="max-h-48 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
             <table class="w-full text-xs">
               <thead>
-                <tr class="text-gray-500 dark:text-gray-400">
-                  <th class="pb-2 text-left">{{ t('dashboard.model') }}</th>
-                  <th class="pb-2 text-right">{{ t('dashboard.requests') }}</th>
-                  <th class="pb-2 text-right">{{ t('dashboard.tokens') }}</th>
-                  <th class="pb-2 text-right">{{ t('dashboard.actual') }}</th>
-                  <th class="pb-2 text-right">{{ t('dashboard.standard') }}</th>
+                <tr class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-dark-500">
+                  <th class="pb-2 text-left font-medium">{{ t('dashboard.model') }}</th>
+                  <th class="pb-2 text-right font-medium">{{ t('dashboard.requests') }}</th>
+                  <th class="pb-2 text-right font-medium">{{ t('dashboard.tokens') }}</th>
+                  <th class="pb-2 text-right font-medium">{{ t('dashboard.actual') }}</th>
+                  <th class="pb-2 text-right font-medium">{{ t('dashboard.standard') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="model in models" :key="model.model" class="border-t border-gray-100 dark:border-gray-700">
-                  <td class="max-w-[100px] truncate py-1.5 font-medium text-gray-900 dark:text-white" :title="model.model">{{ model.model }}</td>
-                  <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatNumber(model.requests) }}</td>
-                  <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatTokens(model.total_tokens) }}</td>
-                  <td class="py-1.5 text-right text-green-600 dark:text-green-400">${{ formatCost(model.actual_cost) }}</td>
-                  <td class="py-1.5 text-right text-gray-400 dark:text-gray-500">${{ formatCost(model.cost) }}</td>
+                <tr v-for="model in models" :key="model.model" class="border-t border-gray-100 dark:border-white/[0.07]">
+                  <td class="max-w-[88px] truncate py-1.5 font-medium text-gray-900 dark:text-white" :title="model.model">{{ model.model }}</td>
+                  <td class="py-1.5 text-right tabular-nums text-gray-600 dark:text-dark-300">{{ formatNumber(model.requests) }}</td>
+                  <td class="py-1.5 text-right tabular-nums text-gray-600 dark:text-dark-300">{{ formatTokens(model.total_tokens) }}</td>
+                  <td class="py-1.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">${{ formatCost(model.actual_cost) }}</td>
+                  <td class="py-1.5 text-right tabular-nums text-gray-400 dark:text-dark-500">${{ formatCost(model.cost) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -80,11 +81,19 @@ const props = defineProps<{ loading: boolean, startDate: string, endDate: string
 defineEmits(['update:startDate', 'update:endDate', 'update:granularity', 'dateRangeChange', 'granularityChange', 'refresh'])
 const { t } = useI18n()
 
+// Linear 冷调单色环形图：与 tailwind.config.js 的 dark-* 中性阶保持一致，
+// 不引入彩虹色——暗色底用浅灰到深灰依次拉开层次，亮色底反过来。
+const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
+const MODEL_RAMP_DARK = ['#f6f7f8', '#cccfd4', '#a1a6ae', '#767c85', '#565b64', '#3d4147', '#26282d', '#17181b']
+const MODEL_RAMP_LIGHT = ['#08090a', '#26282d', '#3d4147', '#565b64', '#767c85', '#a1a6ae', '#cccfd4', '#e9eaec']
+
 const modelData = computed(() => !props.models?.length ? null : {
   labels: props.models.map((m: ModelStat) => m.model),
   datasets: [{
     data: props.models.map((m: ModelStat) => m.total_tokens),
-    backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
+    backgroundColor: isDarkMode.value ? MODEL_RAMP_DARK : MODEL_RAMP_LIGHT,
+    borderColor: isDarkMode.value ? '#0e0f11' : '#ffffff',
+    borderWidth: 2
   }]
 })
 

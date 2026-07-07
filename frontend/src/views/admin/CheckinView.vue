@@ -311,7 +311,7 @@
                 </button>
                 <button
                   @click="handleDeleteTier(row)"
-                  class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                  class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
                   :title="t('common.delete')"
                 >
                   <Icon name="trash" size="sm" />

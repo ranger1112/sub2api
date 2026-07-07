@@ -525,12 +525,14 @@ function setDailyUsageDays(days: 7 | 30 | 90) {
 // ==================== Ring Animation ====================
 
 const CIRCUMFERENCE = 2 * Math.PI * 68
-const RING_GRADIENTS = [
-  { from: '#14b8a6', to: '#5eead4' },
-  { from: '#6366F1', to: '#A5B4FC' },
+// Linear 冷调雅黑：去掉硬编码的 teal/indigo 装饰色，第一环用石墨主色，第二环用中性灰阶
+// （dark/light 感知，深浅互换以保证对比度），emerald/amber 两环保留原语义配色。
+const RING_GRADIENTS = computed(() => [
+  { from: '#52525b', to: '#a1a1aa' },
+  { from: isDark.value ? '#a1a6ae' : '#3d4147', to: isDark.value ? '#e9eaec' : '#767c85' },
   { from: '#10B981', to: '#6EE7B7' },
   { from: '#F59E0B', to: '#FCD34D' },
-]
+])
 
 const ringAnimated = ref(false)
 const displayPcts = ref<number[]>([])
@@ -742,7 +744,7 @@ const detailRows = computed<DetailRow[]>(() => {
       if (sub.weekly_limit_usd > 0) {
         const pct = (sub.weekly_usage_usd / sub.weekly_limit_usd) * 100
         rows.push({
-          iconBg: 'bg-indigo-500/10', iconColor: 'text-indigo-500', iconSvg: ICON_DOLLAR,
+          iconBg: 'bg-dark-400/10 dark:bg-dark-300/10', iconColor: 'text-dark-600 dark:text-dark-300', iconSvg: ICON_DOLLAR,
           label: `${t('keyUsage.usedQuota')} (${locale.value === 'zh' ? '周' : 'W'})`, value: `${usd(sub.weekly_usage_usd)} / ${usd(sub.weekly_limit_usd)}`, valueClass: getUsageColor(pct),
         })
       }
@@ -944,8 +946,8 @@ onUnmounted(() => {
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .input-ring:focus {
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
-  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgb(var(--color-primary-500) / 0.2);
+  border-color: rgb(var(--color-primary-500));
   outline: none;
 }
 
@@ -968,7 +970,7 @@ onUnmounted(() => {
   border-radius: 8px;
 }
 :global(.dark) .skeleton {
-  background: linear-gradient(90deg, #334155 25%, #1e293b 50%, #334155 75%);
+  background: linear-gradient(90deg, #26282d 25%, #17181b 50%, #26282d 75%);
   background-size: 200% 100%;
 }
 

@@ -4,14 +4,18 @@ import App from './App.vue'
 import router from './router'
 import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
+import {
+  applyThemeToDom,
+  readPersistedAccent,
+  readPersistedMode,
+  useThemeStore
+} from '@/stores/theme'
+import '@fontsource-variable/inter/wght.css'
 import './style.css'
 
 function initThemeClass() {
-  const savedTheme = localStorage.getItem('theme')
-  const shouldUseDark =
-    savedTheme === 'dark' ||
-    (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.classList.toggle('dark', shouldUseDark)
+  // FOUC-safe：挂载前先套用持久化的模式(dark 类)与皮肤(data-accent)。
+  applyThemeToDom(readPersistedMode(), readPersistedAccent())
 }
 
 async function bootstrap() {
@@ -21,6 +25,9 @@ async function bootstrap() {
   const app = createApp(App)
   const pinia = createPinia()
   app.use(pinia)
+
+  // 主题 store：重新应用并挂载"跟随系统"监听。
+  useThemeStore().init()
 
   // Initialize settings from injected config BEFORE mounting (prevents flash)
   // This must happen after pinia is installed but before router and i18n

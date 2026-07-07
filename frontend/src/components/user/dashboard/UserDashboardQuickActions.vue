@@ -1,11 +1,11 @@
 <template>
   <div class="card">
-    <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('dashboard.quickActions') }}</h2>
+    <div class="border-b border-gray-100 px-6 py-4 dark:border-white/[0.07]">
+      <h2 class="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('dashboard.quickActions') }}</h2>
     </div>
-    <div class="space-y-3 p-4">
-      <button @click="router.push('/keys')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 transition-transform group-hover:scale-105 dark:bg-primary-900/30">
+    <div class="space-y-2 p-4">
+      <button @click="router.push('/keys')" class="group flex w-full items-center gap-4 rounded-lg bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
+        <div class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-primary-100 transition-transform group-hover:scale-105 dark:bg-primary-900/30">
           <Icon name="key" size="lg" class="text-primary-600 dark:text-primary-400" />
         </div>
         <div class="min-w-0 flex-1">
@@ -15,13 +15,13 @@
         <Icon
           name="chevronRight"
           size="md"
-          class="text-gray-400 transition-colors group-hover:text-primary-500 dark:text-dark-500"
+          class="text-gray-400 transition-colors group-hover:text-gray-600 dark:text-dark-500 dark:group-hover:text-dark-300"
         />
       </button>
 
-      <button @click="router.push('/usage')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 transition-transform group-hover:scale-105 dark:bg-emerald-900/30">
-          <Icon name="chart" size="lg" class="text-emerald-600 dark:text-emerald-400" />
+      <button @click="router.push('/usage')" class="group flex w-full items-center gap-4 rounded-lg bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
+        <div class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-primary-100 transition-transform group-hover:scale-105 dark:bg-primary-900/30">
+          <Icon name="chart" size="lg" class="text-primary-600 dark:text-primary-400" />
         </div>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.viewUsage') }}</p>
@@ -30,13 +30,13 @@
         <Icon
           name="chevronRight"
           size="md"
-          class="text-gray-400 transition-colors group-hover:text-emerald-500 dark:text-dark-500"
+          class="text-gray-400 transition-colors group-hover:text-gray-600 dark:text-dark-500 dark:group-hover:text-dark-300"
         />
       </button>
 
-      <button @click="router.push('/redeem')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 transition-transform group-hover:scale-105 dark:bg-amber-900/30">
-          <Icon name="gift" size="lg" class="text-amber-600 dark:text-amber-400" />
+      <button @click="router.push('/redeem')" class="group flex w-full items-center gap-4 rounded-lg bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]">
+        <div class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-primary-100 transition-transform group-hover:scale-105 dark:bg-primary-900/30">
+          <Icon name="gift" size="lg" class="text-primary-600 dark:text-primary-400" />
         </div>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.redeemCode') }}</p>
@@ -45,7 +45,7 @@
         <Icon
           name="chevronRight"
           size="md"
-          class="text-gray-400 transition-colors group-hover:text-amber-500 dark:text-dark-500"
+          class="text-gray-400 transition-colors group-hover:text-gray-600 dark:text-dark-500 dark:group-hover:text-dark-300"
         />
       </button>
     </div>

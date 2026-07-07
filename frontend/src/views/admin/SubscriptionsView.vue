@@ -331,7 +331,7 @@
                   !row.group?.weekly_limit_usd &&
                   !row.group?.monthly_limit_usd
                 "
-                class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-2 dark:from-emerald-900/20 dark:to-teal-900/20"
+                class="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-900/20"
               >
                 <span class="text-lg text-emerald-600 dark:text-emerald-400">∞</span>
                 <span class="text-xs font-medium text-emerald-700 dark:text-emerald-300">
@@ -347,7 +347,7 @@
                 class="text-sm"
                 :class="
                   isExpiringSoon(value)
-                    ? 'text-orange-600 dark:text-orange-400'
+                    ? 'text-amber-600 dark:text-amber-400'
                     : 'text-gray-700 dark:text-gray-300'
                 "
               >
@@ -382,7 +382,7 @@
               <button
                 v-if="row.status === 'active' || row.status === 'expired'"
                 @click="handleExtend(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-700 dark:hover:text-gray-300"
               >
                 <Icon name="calendar" size="sm" />
                 <span class="text-xs">{{ t('admin.subscriptions.adjust') }}</span>
@@ -391,7 +391,7 @@
                 v-if="row.status === 'active'"
                 @click="handleResetQuota(row)"
                 :disabled="resettingQuota && resettingSubscription?.id === row.id"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon name="refresh" size="sm" />
                 <span class="text-xs">{{ t('admin.subscriptions.resetQuota') }}</span>
@@ -399,7 +399,7 @@
               <button
                 v-if="row.status === 'active'"
                 @click="handleRevoke(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
               >
                 <Icon name="ban" size="sm" />
                 <span class="text-xs">{{ t('admin.subscriptions.revoke') }}</span>
@@ -407,7 +407,7 @@
               <button
                 v-if="row.status === 'revoked'"
                 @click="handleRestore(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
               >
                 <Icon name="refresh" size="sm" />
                 <span class="text-xs">{{ t('admin.subscriptions.restore') }}</span>
@@ -742,7 +742,7 @@
             </div>
 
             <!-- Tip -->
-            <div class="rounded-lg bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+            <div class="rounded-lg bg-primary-50 p-3 text-xs text-primary-700 dark:bg-primary-900/20 dark:text-primary-300">
               {{ t('admin.subscriptions.guide.tip') }}
             </div>
 
@@ -1350,9 +1350,9 @@ const getProgressClass = (used: number | null | undefined, limit: number | null)
   if (!limit || limit === 0) return 'bg-gray-400'
   const usedValue = used ?? 0
   const percentage = (usedValue / limit) * 100
-  if (percentage >= 90) return 'bg-red-500'
-  if (percentage >= 70) return 'bg-orange-500'
-  return 'bg-green-500'
+  if (percentage >= 90) return 'bg-rose-500'
+  if (percentage >= 70) return 'bg-amber-500'
+  return 'bg-emerald-500'
 }
 
 const formatResetDuration = (parts: RemainingDurationParts): string => {
@@ -1457,6 +1457,6 @@ onUnmounted(() => {
 }
 
 .reset-info {
-  @apply flex items-center gap-1 pl-12 text-[10px] text-blue-600 dark:text-blue-400;
+  @apply flex items-center gap-1 pl-12 text-[10px] text-gray-500 dark:text-dark-400;
 }
 </style>

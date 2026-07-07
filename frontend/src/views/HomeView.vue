@@ -32,7 +32,7 @@
         class="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary-400/10 blur-3xl"
       ></div>
       <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
+        class="absolute inset-0 bg-[linear-gradient(rgb(var(--color-primary-500)/0.04)_1px,transparent_1px),linear-gradient(90deg,rgb(var(--color-primary-500)/0.04)_1px,transparent_1px)] bg-[size:64px_64px]"
       ></div>
     </div>
 
@@ -211,7 +211,7 @@
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 transition-transform group-hover:scale-110"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500 transition-transform group-hover:scale-110"
             >
               <Icon name="server" size="lg" class="text-white" />
             </div>
@@ -228,7 +228,7 @@
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/30 transition-transform group-hover:scale-110"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500 transition-transform group-hover:scale-110"
             >
               <svg
                 class="h-6 w-6 text-white"
@@ -257,7 +257,7 @@
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg shadow-purple-500/30 transition-transform group-hover:scale-110"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500 transition-transform group-hover:scale-110"
             >
               <svg
                 class="h-6 w-6 text-white"
@@ -298,7 +298,7 @@
             class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 to-orange-500"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500"
             >
               <span class="text-xs font-bold text-white">C</span>
             </div>
@@ -313,7 +313,7 @@
             class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-green-600"
             >
               <span class="text-xs font-bold text-white">G</span>
             </div>
@@ -328,7 +328,7 @@
             class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500"
             >
               <span class="text-xs font-bold text-white">G</span>
             </div>
@@ -343,7 +343,7 @@
             class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-600"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500"
             >
               <span class="text-xs font-bold text-white">A</span>
             </div>
@@ -358,7 +358,7 @@
             class="flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-gray-500 to-gray-600"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-500"
             >
               <span class="text-xs font-bold text-white">+</span>
             </div>
@@ -490,7 +490,7 @@ onMounted(() => {
 /* Terminal Window */
 .terminal-window {
   width: 420px;
-  background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+  background: linear-gradient(145deg, #17181b 0%, #0e0f11 100%);
   border-radius: 14px;
   box-shadow:
     0 25px 50px -12px rgba(0, 0, 0, 0.4),
@@ -586,31 +586,31 @@ onMounted(() => {
 }
 
 .code-prompt {
-  color: #22c55e;
+  color: #e2e8f0;
   font-weight: bold;
 }
 .code-cmd {
-  color: #38bdf8;
+  color: #cbd5e1;
 }
 .code-flag {
-  color: #a78bfa;
+  color: #94a3b8;
 }
 .code-url {
-  color: #14b8a6;
+  color: rgb(var(--color-primary-400));
 }
 .code-comment {
   color: #64748b;
   font-style: italic;
 }
 .code-success {
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.15);
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.15);
   padding: 2px 8px;
   border-radius: 4px;
   font-weight: 600;
 }
 .code-response {
-  color: #fbbf24;
+  color: #cbd5e1;
 }
 
 /* Blinking Cursor */
@@ -618,7 +618,7 @@ onMounted(() => {
   display: inline-block;
   width: 8px;
   height: 16px;
-  background: #22c55e;
+  background: rgb(var(--color-primary-400));
   animation: blink 1s step-end infinite;
 }
 
@@ -637,8 +637,8 @@ onMounted(() => {
 :deep(.dark) .terminal-window {
   box-shadow:
     0 25px 50px -12px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(20, 184, 166, 0.2),
-    0 0 40px rgba(20, 184, 166, 0.1),
+    0 0 0 1px rgb(var(--color-primary-500) / 0.2),
+    0 0 40px rgb(var(--color-primary-500) / 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 </style>

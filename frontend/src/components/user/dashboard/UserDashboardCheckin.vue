@@ -6,8 +6,8 @@
     </div>
     <div class="p-4">
       <div class="flex items-center gap-4 rounded-xl bg-gray-50 p-4 dark:bg-dark-800/50">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/30">
-          <Icon name="gift" size="lg" class="text-amber-600 dark:text-amber-400" />
+        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 dark:bg-primary-900/30">
+          <Icon name="gift" size="lg" class="text-primary-600 dark:text-primary-400" />
         </div>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-gray-900 dark:text-white">
@@ -39,7 +39,7 @@
 
       <div class="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 dark:border-dark-700">
         <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('checkin.totalEarned') }}</span>
-        <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatCurrency(status.total_reward) }}</span>
+        <span class="font-mono text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{{ formatCurrency(status.total_reward) }}</span>
       </div>
 
       <div class="mt-3">
@@ -51,8 +51,8 @@
             class="flex items-center justify-between rounded-lg px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50 dark:text-dark-300 dark:hover:bg-dark-800/50"
           >
             <span>{{ item.date }}</span>
-            <span class="font-medium text-gray-900 dark:text-white">{{ formatCurrency(item.reward) }}</span>
-            <span class="text-gray-400 dark:text-dark-500">🔥{{ item.streak }}</span>
+            <span class="font-mono font-medium tabular-nums text-gray-900 dark:text-white">{{ formatCurrency(item.reward) }}</span>
+            <span class="font-mono tabular-nums text-gray-400 dark:text-dark-500">🔥{{ item.streak }}</span>
           </div>
         </div>
         <p v-else class="text-xs text-gray-400 dark:text-dark-500">{{ t('checkin.noHistory') }}</p>
