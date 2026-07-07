@@ -36,6 +36,27 @@
       >
         {{ t('checkin.unavailable') }}
       </p>
+
+      <div class="mt-4 flex items-center justify-between border-t border-gray-100 pt-3 dark:border-dark-700">
+        <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('checkin.totalEarned') }}</span>
+        <span class="text-sm font-semibold text-gray-900 dark:text-white">{{ formatCurrency(status.total_reward) }}</span>
+      </div>
+
+      <div class="mt-3">
+        <p class="mb-2 text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('checkin.historyTitle') }}</p>
+        <div v-if="status.history && status.history.length > 0" class="max-h-48 space-y-1 overflow-y-auto pr-1">
+          <div
+            v-for="item in status.history"
+            :key="item.date"
+            class="flex items-center justify-between rounded-lg px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50 dark:text-dark-300 dark:hover:bg-dark-800/50"
+          >
+            <span>{{ item.date }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ formatCurrency(item.reward) }}</span>
+            <span class="text-gray-400 dark:text-dark-500">🔥{{ item.streak }}</span>
+          </div>
+        </div>
+        <p v-else class="text-xs text-gray-400 dark:text-dark-500">{{ t('checkin.noHistory') }}</p>
+      </div>
     </div>
   </div>
 </template>

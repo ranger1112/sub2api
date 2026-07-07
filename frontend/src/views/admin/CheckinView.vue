@@ -321,6 +321,87 @@
           </DataTable>
         </div>
       </div>
+
+      <!-- (D) Check-in Records -->
+      <div class="card">
+        <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.checkin.records.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.checkin.records.description') }}
+            </p>
+          </div>
+          <button
+            @click="loadRecords"
+            :disabled="recordsLoading"
+            class="btn btn-secondary"
+            :title="t('common.refresh')"
+          >
+            <Icon name="refresh" size="md" :class="recordsLoading ? 'animate-spin' : ''" />
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-end gap-3 border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+          <div>
+            <label class="input-label">{{ t('admin.checkin.records.filters.userId') }}</label>
+            <input
+              v-model.number="recordFilters.user_id"
+              type="number"
+              min="1"
+              class="input w-32"
+              :placeholder="t('admin.checkin.records.filters.userIdPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.checkin.records.filters.startDate') }}</label>
+            <input v-model="recordFilters.start_date" type="date" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.checkin.records.filters.endDate') }}</label>
+            <input v-model="recordFilters.end_date" type="date" class="input" />
+          </div>
+          <div class="flex gap-2">
+            <button @click="handleRecordsFilterApply" class="btn btn-primary">{{ t('common.search') }}</button>
+            <button @click="handleRecordsFilterReset" class="btn btn-secondary">{{ t('common.reset') }}</button>
+          </div>
+        </div>
+
+        <div class="p-2">
+          <DataTable :columns="recordColumns" :data="records" :loading="recordsLoading">
+            <template #cell-user="{ row }">
+              <div class="text-sm">
+                <p class="font-medium text-gray-900 dark:text-white">{{ row.user_email }}</p>
+                <p class="text-xs text-gray-500 dark:text-dark-400">{{ row.user_username }}</p>
+              </div>
+            </template>
+            <template #cell-reward_amount="{ value }">
+              <span class="text-sm text-gray-900 dark:text-white">{{ formatCurrency(value) }}</span>
+            </template>
+            <template #cell-created_at="{ value }">
+              <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
+            </template>
+            <template #empty>
+              <div class="flex flex-col items-center">
+                <Icon name="inbox" size="xl" class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500" />
+                <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                  {{ t('admin.checkin.records.empty') }}
+                </p>
+              </div>
+            </template>
+          </DataTable>
+        </div>
+
+        <Pagination
+          v-if="recordsPagination.total > 0"
+          :page="recordsPagination.page"
+          :total="recordsPagination.total"
+          :page-size="recordsPagination.page_size"
+          @update:page="handleRecordsPageChange"
+          @update:pageSize="handleRecordsPageSizeChange"
+        />
+      </div>
     </div>
 
     <!-- Create / Edit Tier Dialog -->
@@ -424,11 +505,13 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { CheckinConfig, CheckinAnalytics, CheckinTier, CheckinTierRequest } from '@/api/admin/checkin'
-import { formatCurrency } from '@/utils/format'
+import type { CheckinConfig, CheckinAnalytics, CheckinTier, CheckinTierRequest, CheckinRecord } from '@/api/admin/checkin'
+import { formatCurrency, formatDateTime } from '@/utils/format'
+import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -812,13 +895,98 @@ const confirmDeleteTier = async () => {
   }
 }
 
+// ==================== Records ====================
+
+const records = ref<CheckinRecord[]>([])
+const recordsLoading = ref(false)
+
+const recordsPagination = reactive({
+  page: 1,
+  page_size: getPersistedPageSize(),
+  total: 0
+})
+
+const recordFilters = reactive({
+  user_id: undefined as number | undefined,
+  start_date: '',
+  end_date: ''
+})
+
+let recordsAbortController: AbortController | null = null
+
+const recordColumns = computed<Column[]>(() => [
+  { key: 'user', label: t('admin.checkin.records.columns.user') },
+  { key: 'check_in_date', label: t('admin.checkin.records.columns.date') },
+  { key: 'reward_amount', label: t('admin.checkin.records.columns.amount') },
+  { key: 'streak_count', label: t('admin.checkin.records.columns.streak') },
+  { key: 'score', label: t('admin.checkin.records.columns.score') },
+  { key: 'created_at', label: t('admin.checkin.records.columns.createdAt') }
+])
+
+const loadRecords = async () => {
+  if (recordsAbortController) {
+    recordsAbortController.abort()
+  }
+  const currentController = new AbortController()
+  recordsAbortController = currentController
+  recordsLoading.value = true
+
+  try {
+    const data = await adminAPI.checkin.listRecords({
+      page: recordsPagination.page,
+      page_size: recordsPagination.page_size,
+      user_id: recordFilters.user_id || undefined,
+      start_date: recordFilters.start_date || undefined,
+      end_date: recordFilters.end_date || undefined
+    })
+    if (currentController.signal.aborted || recordsAbortController !== currentController) return
+    records.value = data.items
+    recordsPagination.total = data.total
+  } catch (error: any) {
+    if (currentController.signal.aborted || recordsAbortController !== currentController) return
+    appStore.showError(error?.message || t('admin.checkin.records.failedToLoad'))
+    console.error('Error loading check-in records:', error)
+  } finally {
+    if (recordsAbortController === currentController) {
+      recordsLoading.value = false
+      recordsAbortController = null
+    }
+  }
+}
+
+const handleRecordsPageChange = (page: number) => {
+  recordsPagination.page = page
+  loadRecords()
+}
+
+const handleRecordsPageSizeChange = (pageSize: number) => {
+  recordsPagination.page_size = pageSize
+  recordsPagination.page = 1
+  loadRecords()
+}
+
+const handleRecordsFilterApply = () => {
+  recordsPagination.page = 1
+  loadRecords()
+}
+
+const handleRecordsFilterReset = () => {
+  recordFilters.user_id = undefined
+  recordFilters.start_date = ''
+  recordFilters.end_date = ''
+  recordsPagination.page = 1
+  loadRecords()
+}
+
 onMounted(() => {
   loadConfig()
   loadAnalytics()
   loadTiers()
+  loadRecords()
 })
 
 onUnmounted(() => {
   tierAbortController?.abort()
+  recordsAbortController?.abort()
 })
 </script>

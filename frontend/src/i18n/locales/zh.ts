@@ -732,7 +732,10 @@ export default {
     errDisabled: '每日签到功能当前已关闭。',
     errNotEligible: '您暂时不满足签到条件。',
     errBudgetExhausted: '今日签到奖励额度已用完，请明天再来。',
-    errMonthlyCap: '您本月的签到奖励已达上限。'
+    errMonthlyCap: '您本月的签到奖励已达上限。',
+    totalEarned: '累计已领',
+    historyTitle: '签到记录',
+    noHistory: '暂无记录'
   },
 
   // Groups (shared)
@@ -5118,6 +5121,26 @@ export default {
         failedToCreateTier: '创建奖励档位失败',
         failedToUpdateTier: '更新奖励档位失败',
         failedToDeleteTier: '删除奖励档位失败'
+      },
+      records: {
+        title: '签到记录',
+        description: '查看每一笔每日签到赠送记录',
+        failedToLoad: '加载签到记录失败',
+        empty: '暂无签到记录',
+        filters: {
+          userId: '用户 ID',
+          userIdPlaceholder: '按用户 ID 筛选',
+          startDate: '开始日期',
+          endDate: '结束日期'
+        },
+        columns: {
+          user: '用户',
+          date: '签到日期',
+          amount: '奖励金额',
+          streak: '连续天数',
+          score: '活跃度分数',
+          createdAt: '创建时间'
+        }
       }
     },
 

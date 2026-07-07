@@ -59,6 +59,28 @@ export interface CheckinTier {
 
 export type CheckinTierRequest = Omit<CheckinTier, 'id' | 'created_at' | 'updated_at'>
 
+export interface CheckinRecord {
+  id: number
+  user_id: number
+  user_email: string
+  user_username: string
+  check_in_date: string
+  reward_amount: number
+  streak_count: number
+  score: number
+  recharge_snapshot: number
+  usage_snapshot: number
+  created_at: string
+}
+
+export interface CheckinRecordListParams {
+  page: number
+  page_size: number
+  user_id?: number
+  start_date?: string
+  end_date?: string
+}
+
 export async function getConfig(): Promise<CheckinConfig> {
   const { data } = await apiClient.get<CheckinConfig>('/admin/checkin/config')
   return data
@@ -94,6 +116,15 @@ export async function deleteTier(id: number): Promise<{ message: string }> {
   return data
 }
 
+export async function listRecords(
+  params: CheckinRecordListParams
+): Promise<{ items: CheckinRecord[]; total: number }> {
+  const { data } = await apiClient.get<{ items: CheckinRecord[]; total: number }>('/admin/checkin/records', {
+    params
+  })
+  return data
+}
+
 const adminCheckinAPI = {
   getConfig,
   updateConfig,
@@ -101,7 +132,8 @@ const adminCheckinAPI = {
   listTiers,
   createTier,
   updateTier,
-  deleteTier
+  deleteTier,
+  listRecords
 }
 
 export default adminCheckinAPI

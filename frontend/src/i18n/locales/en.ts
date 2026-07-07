@@ -733,7 +733,10 @@ export default {
     errDisabled: 'Daily check-in is currently disabled.',
     errNotEligible: 'You are not eligible to check in right now.',
     errBudgetExhausted: "Today's check-in reward budget has been used up. Please try again tomorrow.",
-    errMonthlyCap: 'You have reached this month\'s check-in reward cap.'
+    errMonthlyCap: 'You have reached this month\'s check-in reward cap.',
+    totalEarned: 'Total earned',
+    historyTitle: 'Check-in history',
+    noHistory: 'No records yet'
   },
 
   // Groups (shared)
@@ -4966,6 +4969,26 @@ export default {
         failedToCreateTier: 'Failed to create reward tier',
         failedToUpdateTier: 'Failed to update reward tier',
         failedToDeleteTier: 'Failed to delete reward tier'
+      },
+      records: {
+        title: 'Check-in Records',
+        description: 'Browse individual daily check-in gift records',
+        failedToLoad: 'Failed to load check-in records',
+        empty: 'No check-in records found',
+        filters: {
+          userId: 'User ID',
+          userIdPlaceholder: 'Filter by user ID',
+          startDate: 'Start Date',
+          endDate: 'End Date'
+        },
+        columns: {
+          user: 'User',
+          date: 'Check-in Date',
+          amount: 'Reward Amount',
+          streak: 'Streak',
+          score: 'Score',
+          createdAt: 'Created At'
+        }
       }
     },
 
