@@ -474,22 +474,61 @@ const loadConfig = async () => {
   }
 }
 
+// Shared reward-band invariants used by both the global check-in config and
+// per-tier overrides: min_reward>0, max_reward>=min_reward, base_cap within
+// [min_reward,max_reward], beta_min>=0, beta_max>=beta_min. Callers pass their
+// own i18n key prefix so each keeps its own error message strings.
+interface RewardBandValues {
+  min_reward: number
+  max_reward: number
+  base_cap: number
+  beta_min: number
+  beta_max: number
+}
+
+const validateRewardBand = (
+  vals: RewardBandValues,
+  errors: Partial<Record<keyof RewardBandValues, string>>,
+  keyPrefix: string
+): boolean => {
+  let valid = true
+  if (!(vals.min_reward > 0)) {
+    errors.min_reward = t(`${keyPrefix}.minRewardPositive`)
+    valid = false
+  }
+  if (vals.max_reward < vals.min_reward) {
+    errors.max_reward = t(`${keyPrefix}.maxRewardTooLow`)
+    valid = false
+  }
+  if (vals.base_cap < vals.min_reward || vals.base_cap > vals.max_reward) {
+    errors.base_cap = t(`${keyPrefix}.baseCapRange`)
+    valid = false
+  }
+  if (vals.beta_min < 0) {
+    errors.beta_min = t(`${keyPrefix}.betaMinNegative`)
+    valid = false
+  }
+  if (vals.beta_max < vals.beta_min) {
+    errors.beta_max = t(`${keyPrefix}.betaMaxTooLow`)
+    valid = false
+  }
+  return valid
+}
+
 const validateConfig = (): boolean => {
   Object.keys(configErrors).forEach((key) => delete configErrors[key as keyof CheckinConfig])
 
-  let valid = true
-  if (!(configForm.min_reward > 0)) {
-    configErrors.min_reward = t('admin.checkin.config.errors.minRewardPositive')
-    valid = false
-  }
-  if (configForm.max_reward < configForm.min_reward) {
-    configErrors.max_reward = t('admin.checkin.config.errors.maxRewardTooLow')
-    valid = false
-  }
-  if (configForm.base_cap < configForm.min_reward || configForm.base_cap > configForm.max_reward) {
-    configErrors.base_cap = t('admin.checkin.config.errors.baseCapRange')
-    valid = false
-  }
+  let valid = validateRewardBand(
+    {
+      min_reward: configForm.min_reward,
+      max_reward: configForm.max_reward,
+      base_cap: configForm.base_cap,
+      beta_min: configForm.beta_min,
+      beta_max: configForm.beta_max
+    },
+    configErrors,
+    'admin.checkin.config.errors'
+  )
   if (configForm.weight_recharge < 0) {
     configErrors.weight_recharge = t('admin.checkin.config.errors.weightNegative')
     valid = false
@@ -512,14 +551,6 @@ const validateConfig = (): boolean => {
   }
   if (configForm.streak_cap < 1) {
     configErrors.streak_cap = t('admin.checkin.config.errors.streakCapMin')
-    valid = false
-  }
-  if (configForm.beta_min < 0) {
-    configErrors.beta_min = t('admin.checkin.config.errors.betaMinNegative')
-    valid = false
-  }
-  if (configForm.beta_max < configForm.beta_min) {
-    configErrors.beta_max = t('admin.checkin.config.errors.betaMaxTooLow')
     valid = false
   }
   if (configForm.daily_budget < 0) {
@@ -680,27 +711,18 @@ const validateTier = (): boolean => {
     tierErrors.match_threshold = t('admin.checkin.tiers.errors.matchThresholdNegative')
     valid = false
   }
-  if (!(tierForm.min_reward > 0)) {
-    tierErrors.min_reward = t('admin.checkin.tiers.errors.minRewardPositive')
-    valid = false
-  }
-  if (tierForm.max_reward < tierForm.min_reward) {
-    tierErrors.max_reward = t('admin.checkin.tiers.errors.maxRewardTooLow')
-    valid = false
-  }
-  if (tierForm.base_cap < tierForm.min_reward || tierForm.base_cap > tierForm.max_reward) {
-    tierErrors.base_cap = t('admin.checkin.tiers.errors.baseCapRange')
-    valid = false
-  }
-  if (tierForm.beta_min < 0) {
-    tierErrors.beta_min = t('admin.checkin.tiers.errors.betaMinNegative')
-    valid = false
-  }
-  if (tierForm.beta_max < tierForm.beta_min) {
-    tierErrors.beta_max = t('admin.checkin.tiers.errors.betaMaxTooLow')
-    valid = false
-  }
-  return valid
+  const bandValid = validateRewardBand(
+    {
+      min_reward: tierForm.min_reward,
+      max_reward: tierForm.max_reward,
+      base_cap: tierForm.base_cap,
+      beta_min: tierForm.beta_min,
+      beta_max: tierForm.beta_max
+    },
+    tierErrors,
+    'admin.checkin.tiers.errors'
+  )
+  return valid && bandValid
 }
 
 const openCreateTierDialog = () => {
