@@ -8,7 +8,7 @@
           {{ t('dashboard.balance') }}
         </p>
         <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
-          <Icon name="dollar" size="sm" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
+          <Icon name="creditCard" size="sm" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
         </div>
       </div>
       <p class="mt-4 font-mono text-[26px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-emerald-600 dark:text-emerald-400">

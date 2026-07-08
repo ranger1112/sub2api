@@ -22,11 +22,11 @@
             <Icon name="book" size="md" />
           </a>
           <button
-            @click="toggleTheme"
+            @click="theme.toggleDark()"
             class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
-            :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
+            :title="theme.isDark ? t('home.switchToLight') : t('home.switchToDark')"
           >
-            <Icon v-if="isDark" name="sun" size="md" />
+            <Icon v-if="theme.isDark" name="sun" size="md" />
             <Icon v-else name="moon" size="md" />
           </button>
         </div>
@@ -420,6 +420,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
+import { useThemeStore } from '@/stores/theme'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildGatewayUrl } from '@/api/client'
@@ -436,13 +437,7 @@ const githubUrl = 'https://github.com/Wei-Shaw/sub2api'
 
 // ==================== Theme (same as HomeView) ====================
 
-const isDark = ref(document.documentElement.classList.contains('dark'))
-
-function toggleTheme() {
-  isDark.value = !isDark.value
-  document.documentElement.classList.toggle('dark', isDark.value)
-  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
-}
+const theme = useThemeStore()
 
 const currentYear = computed(() => new Date().getFullYear())
 
@@ -529,7 +524,7 @@ const CIRCUMFERENCE = 2 * Math.PI * 68
 // （dark/light 感知，深浅互换以保证对比度），emerald/amber 两环保留原语义配色。
 const RING_GRADIENTS = computed(() => [
   { from: '#52525b', to: '#a1a1aa' },
-  { from: isDark.value ? '#a1a6ae' : '#3d4147', to: isDark.value ? '#e9eaec' : '#767c85' },
+  { from: theme.isDark ? '#a1a6ae' : '#3d4147', to: theme.isDark ? '#e9eaec' : '#767c85' },
   { from: '#10B981', to: '#6EE7B7' },
   { from: '#F59E0B', to: '#FCD34D' },
 ])
@@ -537,7 +532,7 @@ const RING_GRADIENTS = computed(() => [
 const ringAnimated = ref(false)
 const displayPcts = ref<number[]>([])
 
-const ringTrackColor = computed(() => isDark.value ? '#222222' : '#F0F0EE')
+const ringTrackColor = computed(() => theme.isDark ? '#222222' : '#F0F0EE')
 
 interface RingItem {
   title: string
@@ -907,14 +902,6 @@ async function queryKey() {
 
 // ==================== Lifecycle ====================
 
-function initTheme() {
-  const savedTheme = localStorage.getItem('theme')
-  if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  }
-}
-
 function formatResetTime(resetAt: string | null | undefined): string {
   if (!resetAt) return ''
   const diff = new Date(resetAt).getTime() - now.value.getTime()
@@ -928,7 +915,6 @@ function formatResetTime(resetAt: string | null | undefined): string {
 }
 
 onMounted(() => {
-  initTheme()
   if (!appStore.publicSettingsLoaded) {
     appStore.fetchPublicSettings()
   }

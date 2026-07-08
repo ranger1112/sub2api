@@ -314,6 +314,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import { useThemeStore } from '@/stores/theme'
 
 import {
   Chart as ChartJS,
@@ -387,15 +388,32 @@ const granularityOptions = computed(() => [
 ])
 
 // Dark mode detection
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
+const theme = useThemeStore()
+const isDarkMode = computed(() => theme.isDark)
 
 // Chart colors
 const chartColors = computed(() => ({
   text: isDarkMode.value ? '#e5e7eb' : '#374151',
   grid: isDarkMode.value ? '#374151' : '#e5e7eb'
 }))
+
+// Top 12 用户趋势线是多序列折线图，灰阶会让线条无法区分，改用一组可辨识的定性调色板。
+// 已用 dataviz 校验器核对亮度带/色度下限/相邻 CVD 分离度与卡片背景对比度，浅色卡片(#ffffff)
+// 和暗色卡片(#0e0f11)背景下均可读，故浅/深色主题复用同一组配色。
+const USER_TREND_COLORS = [
+  '#3b82f6', // blue
+  '#d97706', // amber
+  '#0d9488', // teal
+  '#ef4444', // red
+  '#65a30d', // lime
+  '#ec4899', // pink
+  '#0891b2', // cyan
+  '#ea580c', // orange
+  '#8b5cf6', // violet
+  '#16a34a', // green
+  '#c026d3', // fuchsia
+  '#6366f1' // indigo
+]
 
 // Line chart options (for user trend chart)
 const lineOptions = computed(() => ({
@@ -490,11 +508,7 @@ const userTrendChartData = computed(() => {
   })
 
   const sortedDates = Array.from(allDates).sort()
-  // Linear 冷调雅黑：Top 12 用户趋势线不用彩虹色，改灰阶单色梯度（复用 tailwind dark-* 色阶），
-  // 暗色底浅灰在前、亮色底深灰在前，保证与卡片背景的对比；仅此分布图配色，其余图表/元素不动。
-  const colors = isDarkMode.value
-    ? ['#f6f7f8', '#e9eaec', '#cccfd4', '#a1a6ae', '#767c85', '#565b64', '#3d4147', '#26282d', '#17181b']
-    : ['#08090a', '#0e0f11', '#17181b', '#26282d', '#3d4147', '#565b64', '#767c85', '#a1a6ae', '#cccfd4']
+  const colors = USER_TREND_COLORS
 
   const datasets = Array.from(userGroups.values()).map((group, idx) => ({
     label: group.name,

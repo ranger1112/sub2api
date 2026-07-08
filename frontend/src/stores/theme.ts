@@ -77,12 +77,16 @@ export function applyThemeToDom(mode: ThemeMode, accent: string): void {
 export const useThemeStore = defineStore('theme', {
   state: () => ({
     mode: readPersistedMode() as ThemeMode,
-    accent: readPersistedAccent()
+    accent: readPersistedAccent(),
+    // 响应式系统偏好；init() 里随 matchMedia 更新，供 isDark getter 响应式跟随
+    systemDark: systemPrefersDark()
   }),
   getters: {
-    /** 当前是否深色（供图标/预览用）。 */
+    /** 当前是否深色（供图标/图表等响应式据此换色）。 */
     isDark(state): boolean {
-      return resolveDark(state.mode)
+      // 用响应式 state.systemDark（而非 resolveDark 里的非响应式 matchMedia），
+      // 使 isDark 在 mode 或系统偏好变化时都会响应式重算。
+      return state.mode === 'dark' || (state.mode === 'system' && state.systemDark)
     },
     accentOptions: () => ACCENTS
   },
@@ -111,7 +115,8 @@ export const useThemeStore = defineStore('theme', {
     init() {
       this.apply()
       const mql = window.matchMedia('(prefers-color-scheme: dark)')
-      mql.addEventListener('change', () => {
+      mql.addEventListener('change', (e) => {
+        this.systemDark = e.matches
         if (this.mode === 'system') this.apply()
       })
     }

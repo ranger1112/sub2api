@@ -35,6 +35,7 @@ import {
 import { Line } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import type { TrendDataPoint } from '@/types'
+import { useThemeStore } from '@/stores/theme'
 
 ChartJS.register(
   CategoryScale,
@@ -54,9 +55,8 @@ const props = defineProps<{
   loading?: boolean
 }>()
 
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
+const theme = useThemeStore()
+const isDarkMode = computed(() => theme.isDark)
 
 // Linear 冷调单色：与 tailwind.config.js 的 dark-* 中性阶保持一致，不用彩虹色。
 // 主指标（Input）用最强对比，其余按重要性依次减弱；Cache Hit Rate 走右轴、用虚线区分，
