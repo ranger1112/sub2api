@@ -117,6 +117,7 @@ import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
 import type { GroupStat, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
 import { useThemeStore } from '@/stores/theme'
+import { chartCategoricalColor } from '@/utils/chartColors'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -176,16 +177,10 @@ const toggleBreakdown = async (type: string, id: number | string) => {
   }
 }
 
-// Linear 冷调雅黑：分布图不用彩虹色，改灰阶单色梯度（复用 tailwind dark-* 色阶)。
-// 暗色底用浅灰在前逐级压深、亮色底用深灰在前逐级提亮，保证与卡片背景的对比。
+// 分布图用可区分的分类色：灰阶下多类别会糊成一圈白、无法区分（UI chrome 仍单色）。
 const theme = useThemeStore()
 const isDarkMode = computed(() => theme.isDark)
-const DIST_RAMP_DARK = ['#f6f7f8', '#e9eaec', '#cccfd4', '#a1a6ae', '#767c85', '#565b64', '#3d4147', '#26282d', '#17181b']
-const DIST_RAMP_LIGHT = ['#08090a', '#0e0f11', '#17181b', '#26282d', '#3d4147', '#565b64', '#767c85', '#a1a6ae', '#cccfd4']
-const distributionColor = (index: number): string => {
-  const ramp = isDarkMode.value ? DIST_RAMP_DARK : DIST_RAMP_LIGHT
-  return ramp[index % ramp.length]
-}
+const distributionColor = (index: number): string => chartCategoricalColor(index)
 
 const displayGroupStats = computed(() => {
   if (!props.groupStats?.length) return []

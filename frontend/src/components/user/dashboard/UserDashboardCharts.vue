@@ -76,24 +76,22 @@ import type { TrendDataPoint, ModelStat } from '@/types'
 import { formatCostFixed as formatCost, formatNumberLocaleString as formatNumber, formatTokensK as formatTokens } from '@/utils/format'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 import { useThemeStore } from '@/stores/theme'
+import { chartCategoricalColor } from '@/utils/chartColors'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler)
 
 const props = defineProps<{ loading: boolean, startDate: string, endDate: string, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()
 defineEmits(['update:startDate', 'update:endDate', 'update:granularity', 'dateRangeChange', 'granularityChange', 'refresh'])
 const { t } = useI18n()
 
-// Linear 冷调单色环形图：与 tailwind.config.js 的 dark-* 中性阶保持一致，
-// 不引入彩虹色——暗色底用浅灰到深灰依次拉开层次，亮色底反过来。
+// 环形图用可区分的分类色：灰阶下多类别会糊成一圈白、无法区分（UI chrome 仍单色）。
 const theme = useThemeStore()
 const isDarkMode = computed(() => theme.isDark)
-const MODEL_RAMP_DARK = ['#f6f7f8', '#cccfd4', '#a1a6ae', '#767c85', '#565b64', '#3d4147', '#26282d', '#17181b']
-const MODEL_RAMP_LIGHT = ['#08090a', '#26282d', '#3d4147', '#565b64', '#767c85', '#a1a6ae', '#cccfd4', '#e9eaec']
 
 const modelData = computed(() => !props.models?.length ? null : {
   labels: props.models.map((m: ModelStat) => m.model),
   datasets: [{
     data: props.models.map((m: ModelStat) => m.total_tokens),
-    backgroundColor: isDarkMode.value ? MODEL_RAMP_DARK : MODEL_RAMP_LIGHT,
+    backgroundColor: props.models.map((_: ModelStat, i: number) => chartCategoricalColor(i)),
     borderColor: isDarkMode.value ? '#0e0f11' : '#ffffff',
     borderWidth: 2
   }]

@@ -315,6 +315,7 @@ import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import { useThemeStore } from '@/stores/theme'
+import { CHART_CATEGORICAL_COLORS } from '@/utils/chartColors'
 
 import {
   Chart as ChartJS,
@@ -398,22 +399,8 @@ const chartColors = computed(() => ({
 }))
 
 // Top 12 用户趋势线是多序列折线图，灰阶会让线条无法区分，改用一组可辨识的定性调色板。
-// 已用 dataviz 校验器核对亮度带/色度下限/相邻 CVD 分离度与卡片背景对比度，浅色卡片(#ffffff)
-// 和暗色卡片(#0e0f11)背景下均可读，故浅/深色主题复用同一组配色。
-const USER_TREND_COLORS = [
-  '#3b82f6', // blue
-  '#d97706', // amber
-  '#0d9488', // teal
-  '#ef4444', // red
-  '#65a30d', // lime
-  '#ec4899', // pink
-  '#0891b2', // cyan
-  '#ea580c', // orange
-  '#8b5cf6', // violet
-  '#16a34a', // green
-  '#c026d3', // fuchsia
-  '#6366f1' // indigo
-]
+// 与全站分布图/趋势图共用同一组分类色（见 utils/chartColors），浅/深色卡片背景下均可读。
+const USER_TREND_COLORS = CHART_CATEGORICAL_COLORS
 
 // Line chart options (for user trend chart)
 const lineOptions = computed(() => ({

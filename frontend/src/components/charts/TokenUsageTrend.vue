@@ -58,29 +58,19 @@ const props = defineProps<{
 const theme = useThemeStore()
 const isDarkMode = computed(() => theme.isDark)
 
-// Linear 冷调单色：与 tailwind.config.js 的 dark-* 中性阶保持一致，不用彩虹色。
-// 主指标（Input）用最强对比，其余按重要性依次减弱；Cache Hit Rate 走右轴、用虚线区分，
-// 无需再靠色相区分。
+// 轴 / 网格随明暗切换；数据序列改用固定的可区分语义色（灰阶下多条折线会叠成一片、分不清）。
 const chartColors = computed(() => (isDarkMode.value
-  ? {
-      text: '#767c85', // dark-400
-      grid: 'rgba(255, 255, 255, 0.07)',
-      input: '#f6f7f8', // dark-50
-      output: '#a1a6ae', // dark-300
-      cacheCreation: '#565b64', // dark-500
-      cacheRead: '#3d4147', // dark-600
-      cacheHitRate: '#cccfd4' // dark-200, dashed
-    }
-  : {
-      text: '#565b64', // dark-500
-      grid: 'rgba(9, 9, 11, 0.08)',
-      input: '#08090a', // dark-950
-      output: '#3d4147', // dark-600
-      cacheCreation: '#767c85', // dark-400
-      cacheRead: '#a1a6ae', // dark-300
-      cacheHitRate: '#565b64' // dark-500, dashed
-    }
+  ? { text: '#767c85', grid: 'rgba(255, 255, 255, 0.07)' } // dark-400
+  : { text: '#565b64', grid: 'rgba(9, 9, 11, 0.08)' } // dark-500
 ))
+// 五个序列的固定色：明暗两套底色下都足够清晰、彼此可区分。Cache Hit Rate 走右轴 + 虚线。
+const SERIES = {
+  input: '#3b82f6', // blue
+  output: '#8b5cf6', // violet
+  cacheCreation: '#d97706', // amber
+  cacheRead: '#0d9488', // teal
+  cacheHitRate: '#ec4899' // pink, dashed
+}
 
 const chartData = computed(() => {
   if (!props.trendData?.length) return null
@@ -91,32 +81,32 @@ const chartData = computed(() => {
       {
         label: 'Input',
         data: props.trendData.map((d) => d.input_tokens),
-        borderColor: chartColors.value.input,
-        backgroundColor: `${chartColors.value.input}20`,
+        borderColor: SERIES.input,
+        backgroundColor: `${SERIES.input}20`,
         fill: true,
         tension: 0.3
       },
       {
         label: 'Output',
         data: props.trendData.map((d) => d.output_tokens),
-        borderColor: chartColors.value.output,
-        backgroundColor: `${chartColors.value.output}20`,
+        borderColor: SERIES.output,
+        backgroundColor: `${SERIES.output}20`,
         fill: true,
         tension: 0.3
       },
       {
         label: 'Cache Creation',
         data: props.trendData.map((d) => d.cache_creation_tokens),
-        borderColor: chartColors.value.cacheCreation,
-        backgroundColor: `${chartColors.value.cacheCreation}20`,
+        borderColor: SERIES.cacheCreation,
+        backgroundColor: `${SERIES.cacheCreation}20`,
         fill: true,
         tension: 0.3
       },
       {
         label: 'Cache Read',
         data: props.trendData.map((d) => d.cache_read_tokens),
-        borderColor: chartColors.value.cacheRead,
-        backgroundColor: `${chartColors.value.cacheRead}20`,
+        borderColor: SERIES.cacheRead,
+        backgroundColor: `${SERIES.cacheRead}20`,
         fill: true,
         tension: 0.3
       },
@@ -126,8 +116,8 @@ const chartData = computed(() => {
           const totalPromptTokens = d.input_tokens + d.cache_read_tokens + d.cache_creation_tokens
           return totalPromptTokens > 0 ? (d.cache_read_tokens / totalPromptTokens) * 100 : 0
         }),
-        borderColor: chartColors.value.cacheHitRate,
-        backgroundColor: `${chartColors.value.cacheHitRate}20`,
+        borderColor: SERIES.cacheHitRate,
+        backgroundColor: `${SERIES.cacheHitRate}20`,
         borderDash: [5, 5],
         fill: false,
         tension: 0.3,
@@ -208,7 +198,7 @@ const lineOptions = computed(() => ({
         drawOnChartArea: false
       },
       ticks: {
-        color: chartColors.value.cacheHitRate,
+        color: SERIES.cacheHitRate,
         font: {
           size: 10
         },
