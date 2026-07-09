@@ -597,7 +597,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 createForm.is_exclusive
-                  ? 'bg-primary-500'
+                  ? 'bg-emerald-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -1979,7 +1979,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 editForm.is_exclusive
-                  ? 'bg-primary-500'
+                  ? 'bg-emerald-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >

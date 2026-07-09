@@ -505,7 +505,7 @@
               @click="formData.use_custom_key = !formData.use_custom_key"
               :class="[
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                formData.use_custom_key ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                formData.use_custom_key ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -547,7 +547,7 @@
               @click="formData.enable_ip_restriction = !formData.enable_ip_restriction"
               :class="[
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                formData.enable_ip_restriction ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                formData.enable_ip_restriction ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -595,7 +595,7 @@
               @click="formData.enable_quota = !formData.enable_quota"
               :class="[
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                formData.enable_quota ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                formData.enable_quota ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -659,7 +659,7 @@
               @click="formData.enable_rate_limit = !formData.enable_rate_limit"
               :class="[
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                formData.enable_rate_limit ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                formData.enable_rate_limit ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -833,7 +833,7 @@
               @click="formData.enable_expiration = !formData.enable_expiration"
               :class="[
                 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                formData.enable_expiration ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                formData.enable_expiration ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
