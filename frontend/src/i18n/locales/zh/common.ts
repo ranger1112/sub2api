@@ -169,6 +169,7 @@ export default {
     redeemCodes: '兑换码',
     ops: '运维监控',
     promoCodes: '优惠码',
+    checkin: '每日签到',
     settings: '系统设置',
     myAccount: '我的账户',
     lightMode: '浅色模式',
