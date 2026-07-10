@@ -382,6 +382,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if clientConversationID != "" {
 			req.Header.Set("conversation_id", isolateOpenAISessionID(apiKeyID, clientConversationID))
 		}
+	} else if isOpenAIResponsesCompactPath(c) {
+		// 透传白名单会放行客户端的 Accept: text/event-stream；compact 上游是
+		// unary JSON 协议，API-key 账号同样强制 Accept，避免上游按 SSE 返回
+		// （#3777 期望行为 4）。
+		req.Header.Set("accept", "application/json")
 	}
 
 	// 透传模式也支持账户自定义 User-Agent 与 ForceCodexCLI 兜底。
@@ -1088,7 +1093,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
-	c.Data(resp.StatusCode, contentType, body)
+	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
+		c.Data(resp.StatusCode, contentType, body)
+	}
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
 		usage:            usage,
@@ -1120,6 +1127,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 				}
 			}
 		}
+		finalResponse = supplementCompactionItemFromSSE(c, finalResponse, bodyText)
 		body = finalResponse
 		if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 			body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
@@ -1151,7 +1159,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			contentType = "text/event-stream"
 		}
 	}
-	c.Data(resp.StatusCode, contentType, body)
+	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
+		c.Data(resp.StatusCode, contentType, body)
+	}
 
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
