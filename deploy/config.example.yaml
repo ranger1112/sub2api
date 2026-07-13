@@ -257,6 +257,10 @@ gateway:
     # 是否允许 HTTP/SSE 入站请求使用上游 WSv2 连接池。
     # 默认 false 保持历史行为；开启前建议先用少量账号 canary，避免连接数/上游 WS 配额突增。
     http_ingress_enabled: false
+    # Close a client WebSocket that stays idle between completed turns (seconds). Set 0 to disable.
+    ingress_inter_turn_idle_timeout_seconds: 300
+    # Limit live client WebSocket ingress sessions per API key across all instances. Set 0 to disable.
+    max_ingress_connections_per_api_key: 64
     # 全局总开关，默认 true；关闭时所有请求保持原有 HTTP/SSE 路由
     enabled: true
     # 按账号类型细分开关
