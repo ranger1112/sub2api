@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 
 	"github.com/imroc/req/v3"
 )
@@ -58,12 +59,24 @@ func getSharedReqClient(opts reqClientOptions) (*req.Client, error) {
 	if trimmed != "" {
 		client.SetProxyURL(trimmed)
 	}
+	client = instrumentReqClient(client)
 
 	actual, _ := sharedReqClients.LoadOrStore(key, client)
 	if c, ok := actual.(*req.Client); ok {
 		return c, nil
 	}
 	return client, nil
+}
+
+func instrumentReqClient(client *req.Client) *req.Client {
+	if client == nil {
+		return nil
+	}
+	client.GetTransport().WrapRoundTripFunc(func(rt http.RoundTripper) req.HttpRoundTripFunc {
+		timed := servertiming.WrapRoundTripper(rt)
+		return timed.RoundTrip
+	})
+	return client
 }
 
 func buildReqClientKey(opts reqClientOptions) string {
