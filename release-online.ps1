@@ -165,6 +165,10 @@ function Invoke-ReleaseTests {
     param([Parameter(Mandatory)][string[]]$ChangedFiles)
 
     $previousCorepackSetting = $env:COREPACK_ENABLE_PROJECT_SPEC
+    $previousGoTempDir = $env:GOTMPDIR
+    $goTempDir = Join-Path $repoRoot '.tmp/go-release-tests'
+    New-Item -ItemType Directory -Force -Path $goTempDir | Out-Null
+    $env:GOTMPDIR = $goTempDir
     try {
         Write-Step 'Backend compile preflight'
         Push-Location (Join-Path $repoRoot 'backend')
@@ -231,6 +235,10 @@ function Invoke-ReleaseTests {
     }
     finally {
         $env:COREPACK_ENABLE_PROJECT_SPEC = $previousCorepackSetting
+        $env:GOTMPDIR = $previousGoTempDir
+        if (Test-Path -LiteralPath $goTempDir) {
+            Remove-Item -LiteralPath $goTempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
