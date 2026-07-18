@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/server"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -25,8 +26,9 @@ import (
 )
 
 type Application struct {
-	Server  *http.Server
-	Cleanup func()
+	Server      *http.Server
+	PromptAudit *securityaudit.PromptService
+	Cleanup     func()
 }
 
 func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
@@ -37,6 +39,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		// Business layer ProviderSets
 		repository.ProviderSet,
 		service.ProviderSet,
+		securityaudit.ProviderSet,
 		payment.ProviderSet,
 		middleware.ProviderSet,
 		handler.ProviderSet,
@@ -58,7 +61,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -91,6 +94,10 @@ func provideCleanup(
 	opsCleanup *service.OpsCleanupService,
 	opsScheduledReport *service.OpsScheduledReportService,
 	opsSystemLogSink *service.OpsSystemLogSink,
+	opsService *service.OpsService,
+	opsIngressReject *service.OpsIngressRejectAggregator,
+	apiKeyService *service.APIKeyService,
+	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
 	accountExpiry *service.AccountExpiryService,
@@ -118,6 +125,7 @@ func provideCleanup(
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	auditLog *service.AuditLogService,
+	promptAudit *securityaudit.PromptService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -130,6 +138,36 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"OpsIngressRejectAggregator", func() error {
+				if opsIngressReject != nil {
+					opsIngressReject.Stop()
+				}
+				return nil
+			}},
+			{"AuthCacheInvalidationWorker", func() error {
+				if authCacheInvalidationWorker != nil {
+					authCacheInvalidationWorker.Stop()
+				}
+				return nil
+			}},
+			{"AuthCacheInvalidationSubscriber", func() error {
+				if apiKeyService != nil {
+					apiKeyService.StopAuthCacheInvalidationSubscriber()
+				}
+				return nil
+			}},
+			{"OpsRuntimeSettingsRefresh", func() error {
+				if opsService != nil {
+					opsService.StopRuntimeSettingsRefresh()
+				}
+				return nil
+			}},
+			{"PromptAuditService", func() error {
+				if promptAudit != nil {
+					return promptAudit.Shutdown(ctx)
+				}
+				return nil
+			}},
 			{"OpsScheduledReportService", func() error {
 				if opsScheduledReport != nil {
 					opsScheduledReport.Stop()

@@ -6,6 +6,7 @@ import ops from './ops'
 import settings from './settings'
 import checkin from './checkin'
 import audit from './audit'
+import promptAudit from './promptAudit'
 
 export default {
   ...overview,
@@ -16,4 +17,5 @@ export default {
   ...settings,
   ...checkin,
   ...audit,
+  ...promptAudit,
 }
