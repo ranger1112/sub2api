@@ -25,7 +25,7 @@
         <!-- Logo -->
         <div class="flex items-center">
           <div class="h-8 w-8 overflow-hidden rounded-lg shadow-sm">
-            <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
+            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </div>
         </div>
 

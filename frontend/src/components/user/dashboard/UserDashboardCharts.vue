@@ -28,12 +28,12 @@
         </div>
         <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:text-dark-500">Distribution</p>
         <h3 class="mb-4 mt-1.5 text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
-        <div class="flex items-center gap-5">
-          <div class="h-40 w-40 flex-shrink-0">
+        <div class="flex flex-col items-center gap-4 sm:flex-row sm:gap-5">
+          <div class="h-40 w-40 shrink-0">
             <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-dark-400">{{ t('dashboard.noDataAvailable') }}</div>
           </div>
-          <div class="max-h-48 min-w-0 flex-1 overflow-x-auto overflow-y-auto">
+          <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
             <table class="w-full text-xs">
               <thead>
                 <tr class="text-[10px] uppercase tracking-wide text-gray-400 dark:text-dark-500">
