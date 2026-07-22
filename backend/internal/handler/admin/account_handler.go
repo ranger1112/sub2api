@@ -88,8 +88,13 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
-	kiroOAuthService *service.KiroOAuthService,
+	kiroOAuthServices ...*service.KiroOAuthService,
 ) *AccountHandler {
+	var kiroOAuthService *service.KiroOAuthService
+	if len(kiroOAuthServices) > 0 {
+		kiroOAuthService = kiroOAuthServices[0]
+	}
+
 	return &AccountHandler{
 		adminService:            adminService,
 		oauthService:            oauthService,
