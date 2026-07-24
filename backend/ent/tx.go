@@ -46,6 +46,8 @@ type Tx struct {
 	CheckInRecord *CheckInRecordClient
 	// CheckInRewardTier is the client for interacting with the CheckInRewardTier builders.
 	CheckInRewardTier *CheckInRewardTierClient
+	// CompositeModelRoute is the client for interacting with the CompositeModelRoute builders.
+	CompositeModelRoute *CompositeModelRouteClient
 	// ErrorPassthroughRule is the client for interacting with the ErrorPassthroughRule builders.
 	ErrorPassthroughRule *ErrorPassthroughRuleClient
 	// Group is the client for interacting with the Group builders.
@@ -241,6 +243,7 @@ func (tx *Tx) init() {
 	tx.ChannelMonitorRequestTemplate = NewChannelMonitorRequestTemplateClient(tx.config)
 	tx.CheckInRecord = NewCheckInRecordClient(tx.config)
 	tx.CheckInRewardTier = NewCheckInRewardTierClient(tx.config)
+	tx.CompositeModelRoute = NewCompositeModelRouteClient(tx.config)
 	tx.ErrorPassthroughRule = NewErrorPassthroughRuleClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
