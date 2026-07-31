@@ -20,6 +20,7 @@ import (
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
 	clearGrokResponsesClientToolMapping(c)
+	clearOpenAIResponsesNamespaceNames(c)
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
@@ -64,7 +65,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
 	}
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
-	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled) {
+	compactPath := isOpenAIResponsesCompactPath(c)
+	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled, compactPath) {
 		body, err = flattenOpenAIResponsesNamespaces(c, body)
 		if err != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
@@ -75,7 +77,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 	if shouldStripOpenAIResponsesInputNamespaces(account, wsDecision.Transport, passthroughEnabled) {
-		body, err = stripOpenAIResponsesInputNamespaces(body)
+		keepToolCallNamespaces := shouldKeepOpenAIResponsesToolCallNamespaces(
+			account, wsDecision.Transport, passthroughEnabled, compactPath,
+		)
+		body, err = stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces)
 		if err != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
 			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
@@ -275,7 +280,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("model", billingModel)
 	}
 	upstreamModel := billingModel
-	isCompactRequest := isOpenAIResponsesCompactPath(c)
+	isCompactRequest := compactPath
 	compactMapped := false
 	if isCompactRequest {
 		compactMappedModel := resolveOpenAICompactForwardModel(account, billingModel)
