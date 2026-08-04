@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 
 import ModelDistributionChart from '../ModelDistributionChart.vue'
+import { useThemeStore } from '@/stores/theme'
 
 const messages: Record<string, string> = {
   'admin.dashboard.modelDistribution': 'Model Distribution',
@@ -48,6 +50,11 @@ vi.mock('vue-chartjs', () => ({
 }))
 
 describe('ModelDistributionChart', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useThemeStore().mode = 'light'
+  })
+
   const modelStats = [
     {
       model: 'model-a',
@@ -184,7 +191,7 @@ describe('ModelDistributionChart', () => {
     ])
     expect(chartData.datasets[0].data).toEqual([12, 8, 0, 10])
     expect(chartData.datasets[0].backgroundColor[0]).toBe('#3b82f6')
-    expect(chartData.datasets[0].backgroundColor[3]).toBe('#94a3b8')
+    expect(chartData.datasets[0].backgroundColor[3]).toBe('#565b64')
     expect(chartData.datasets[0].backgroundColor[3]).not.toBe(chartData.datasets[0].backgroundColor[0])
 
     const rows = wrapper.findAll('tbody tr')
