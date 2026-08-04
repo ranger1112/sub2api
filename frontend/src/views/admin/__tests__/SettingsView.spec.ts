@@ -11,6 +11,9 @@ const {
   updateWebSearchEmulationConfig,
   getAdminApiKey,
   getOverloadCooldownSettings,
+  getOpenAICapacityQuarantineSettings,
+  updateOpenAICapacityQuarantineSettings,
+  testOpenAICapacityQuarantineMatcher,
   getRateLimit429CooldownSettings,
   updateRateLimit429CooldownSettings,
   getPanelRateLimitSettings,
@@ -39,6 +42,9 @@ const {
   updateWebSearchEmulationConfig: vi.fn(),
   getAdminApiKey: vi.fn(),
   getOverloadCooldownSettings: vi.fn(),
+  getOpenAICapacityQuarantineSettings: vi.fn(),
+  updateOpenAICapacityQuarantineSettings: vi.fn(),
+  testOpenAICapacityQuarantineMatcher: vi.fn(),
   getRateLimit429CooldownSettings: vi.fn(),
   updateRateLimit429CooldownSettings: vi.fn(),
   getPanelRateLimitSettings: vi.fn().mockResolvedValue({
@@ -86,6 +92,9 @@ vi.mock("@/api", () => ({
       updateWebSearchEmulationConfig,
       getAdminApiKey,
       getOverloadCooldownSettings,
+      getOpenAICapacityQuarantineSettings,
+      updateOpenAICapacityQuarantineSettings,
+      testOpenAICapacityQuarantineMatcher,
       getRateLimit429CooldownSettings,
       updateRateLimit429CooldownSettings,
       getPanelRateLimitSettings,
@@ -1681,5 +1690,109 @@ describe("admin SettingsView platform quota matrix", () => {
     const quotas = payload["default_platform_quotas"] as Record<string, Record<string, unknown>>;
     // 不管输入是什么，提交值应为 null（而非 "" 或 NaN）
     expect(quotas["anthropic"]?.["daily"]).toBe(null);
+  });
+});
+
+describe("admin SettingsView OpenAI Capacity temporary quarantine", () => {
+  const capacitySettings = {
+    revision: 4,
+    mode: "shadow" as const,
+    window_seconds: 300,
+    error_threshold: 3,
+    initial_cooldown_seconds: 600,
+    retrip_window_seconds: 3600,
+    retrip_cooldown_seconds: 1800,
+    max_cooldown_seconds: 1800,
+    half_open: {
+      max_requests: 1,
+      lease_seconds: 120,
+      renew_interval_seconds: 30,
+    },
+    match_rules: [
+      {
+        id: "builtin-model-capacity",
+        name: "OpenAI model_capacity",
+        enabled: true,
+        conditions: [
+          {
+            source: "provider_code" as const,
+            operator: "equals" as const,
+            value: "model_capacity",
+          },
+        ],
+      },
+    ],
+    group_policies: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localeRef.value = "zh-CN";
+    getSettings.mockResolvedValue({ ...baseSettingsResponse });
+    getOpenAICapacityQuarantineSettings.mockResolvedValue({
+      ...capacitySettings,
+    });
+    updateOpenAICapacityQuarantineSettings.mockImplementation(
+      async (payload) => ({ ...payload, revision: payload.revision + 1 }),
+    );
+    testOpenAICapacityQuarantineMatcher.mockResolvedValue({
+      matched: true,
+      rule_id: "builtin-model-capacity",
+    });
+    getGroups.mockResolvedValue([
+      {
+        id: 12,
+        name: "OpenAI primary",
+        platform: "openai",
+        status: "active",
+      },
+    ]);
+  });
+
+  it("loads the versioned policy, preserves its revision, and submits the selected mode", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    expect(getOpenAICapacityQuarantineSettings).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('[data-testid="openai-capacity-mode"]').element).toHaveProperty(
+      "value",
+      "shadow",
+    );
+
+    await wrapper.get('[data-testid="openai-capacity-mode"]').setValue("enforce");
+    await wrapper.get('[data-testid="save-openai-capacity-quarantine"]').trigger("click");
+    await flushPromises();
+
+    expect(updateOpenAICapacityQuarantineSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ revision: 4, mode: "enforce" }),
+    );
+  });
+
+  it("tests only normalized matcher input through the dedicated endpoint", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const card = wrapper.get('[data-testid="openai-capacity-quarantine-card"]');
+    const inputs = card.findAll('input[type="text"]');
+    const providerCodeInput = inputs.find((input) =>
+      input.attributes("placeholder") ===
+      "admin.settings.openaiCapacityQuarantine.providerCode",
+    );
+    expect(providerCodeInput).toBeDefined();
+    await providerCodeInput?.setValue("model_capacity");
+
+    await card.findAll("button").find((button) =>
+      button.text().includes("admin.settings.openaiCapacityQuarantine.testMatcher"),
+    )?.trigger("click");
+    await flushPromises();
+
+    expect(testOpenAICapacityQuarantineMatcher).toHaveBeenCalledWith(
+      expect.objectContaining({
+        http_status: 529,
+        provider_code: "model_capacity",
+      }),
+    );
   });
 });

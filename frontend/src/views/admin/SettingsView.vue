@@ -304,6 +304,423 @@
             </div>
           </div>
 
+          <!-- OpenAI Capacity Quarantine Settings -->
+          <div class="card" data-testid="openai-capacity-quarantine-card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.openaiCapacityQuarantine.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.openaiCapacityQuarantine.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div
+                v-if="openAICapacityQuarantineLoading"
+                class="flex items-center gap-2 text-gray-500"
+              >
+                <div
+                  class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"
+                ></div>
+                {{ t("common.loading") }}
+              </div>
+
+              <template v-else>
+                <div
+                  class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+                >
+                  {{ t("admin.settings.openaiCapacityQuarantine.executionNotice") }}
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                      for="openai-capacity-mode"
+                    >
+                      {{ t("admin.settings.openaiCapacityQuarantine.mode") }}
+                    </label>
+                    <select
+                      id="openai-capacity-mode"
+                      v-model="openAICapacityQuarantineForm.mode"
+                      class="input w-full"
+                      data-testid="openai-capacity-mode"
+                    >
+                      <option value="disabled">
+                        {{ t("admin.settings.openaiCapacityQuarantine.modeDisabled") }}
+                      </option>
+                      <option value="shadow">
+                        {{ t("admin.settings.openaiCapacityQuarantine.modeShadow") }}
+                      </option>
+                      <option value="enforce">
+                        {{ t("admin.settings.openaiCapacityQuarantine.modeEnforce") }}
+                      </option>
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ openAICapacityModeHint }}
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                      for="openai-capacity-threshold"
+                    >
+                      {{ t("admin.settings.openaiCapacityQuarantine.errorThreshold") }}
+                    </label>
+                    <input
+                      id="openai-capacity-threshold"
+                      v-model.number="openAICapacityQuarantineForm.error_threshold"
+                      type="number"
+                      min="2"
+                      max="20"
+                      class="input w-full"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.openaiCapacityQuarantine.errorThresholdHint") }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 border-t border-gray-100 pt-4 dark:border-dark-700 md:grid-cols-2 xl:grid-cols-3">
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiCapacityQuarantine.windowSeconds") }}
+                    </label>
+                    <input
+                      v-model.number="openAICapacityQuarantineForm.window_seconds"
+                      type="number"
+                      min="30"
+                      max="3600"
+                      class="input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiCapacityQuarantine.initialCooldown") }}
+                    </label>
+                    <input
+                      v-model.number="openAICapacityQuarantineForm.initial_cooldown_seconds"
+                      type="number"
+                      min="1"
+                      max="86400"
+                      class="input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiCapacityQuarantine.retripWindow") }}
+                    </label>
+                    <input
+                      v-model.number="openAICapacityQuarantineForm.retrip_window_seconds"
+                      type="number"
+                      min="30"
+                      max="86400"
+                      class="input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiCapacityQuarantine.retripCooldown") }}
+                    </label>
+                    <input
+                      v-model.number="openAICapacityQuarantineForm.retrip_cooldown_seconds"
+                      type="number"
+                      min="1"
+                      max="86400"
+                      class="input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiCapacityQuarantine.maxCooldown") }}
+                    </label>
+                    <input
+                      v-model.number="openAICapacityQuarantineForm.max_cooldown_seconds"
+                      type="number"
+                      min="1"
+                      max="86400"
+                      class="input w-full"
+                    />
+                  </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <h3 class="font-medium text-gray-900 dark:text-white">
+                    {{ t("admin.settings.openaiCapacityQuarantine.halfOpenTitle") }}
+                  </h3>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiCapacityQuarantine.halfOpenHint") }}
+                  </p>
+                  <div class="mt-3 grid gap-4 md:grid-cols-3">
+                    <div>
+                      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiCapacityQuarantine.maxRequests") }}
+                      </label>
+                      <input
+                        :value="openAICapacityQuarantineForm.half_open.max_requests"
+                        type="number"
+                        class="input w-full cursor-not-allowed opacity-70"
+                        disabled
+                      />
+                    </div>
+                    <div>
+                      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiCapacityQuarantine.leaseSeconds") }}
+                      </label>
+                      <input
+                        v-model.number="openAICapacityQuarantineForm.half_open.lease_seconds"
+                        type="number"
+                        min="30"
+                        max="900"
+                        class="input w-full"
+                      />
+                    </div>
+                    <div>
+                      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiCapacityQuarantine.renewInterval") }}
+                      </label>
+                      <input
+                        v-model.number="openAICapacityQuarantineForm.half_open.renew_interval_seconds"
+                        type="number"
+                        min="1"
+                        :max="Math.max(1, openAICapacityQuarantineForm.half_open.lease_seconds - 1)"
+                        class="input w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <div class="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 class="font-medium text-gray-900 dark:text-white">
+                        {{ t("admin.settings.openaiCapacityQuarantine.rulesTitle") }}
+                      </h3>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t("admin.settings.openaiCapacityQuarantine.rulesHint") }}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      @click="addOpenAICapacityMatchRule"
+                    >
+                      {{ t("admin.settings.openaiCapacityQuarantine.addRule") }}
+                    </button>
+                  </div>
+
+                  <div class="mt-3 space-y-3">
+                    <div
+                      v-for="(rule, ruleIndex) in openAICapacityQuarantineForm.match_rules"
+                      :key="rule.id"
+                      class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+                    >
+                      <div class="flex flex-wrap items-center gap-3">
+                        <Toggle v-model="rule.enabled" />
+                        <input
+                          v-model.trim="rule.id"
+                          type="text"
+                          class="input min-w-36 flex-1"
+                          :placeholder="t('admin.settings.openaiCapacityQuarantine.ruleID')"
+                        />
+                        <input
+                          v-model.trim="rule.name"
+                          type="text"
+                          class="input min-w-40 flex-[2]"
+                          :placeholder="t('admin.settings.openaiCapacityQuarantine.ruleName')"
+                        />
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm text-red-600 dark:text-red-400"
+                          @click="removeOpenAICapacityMatchRule(ruleIndex)"
+                        >
+                          {{ t("common.delete") }}
+                        </button>
+                      </div>
+                      <div class="mt-3 space-y-2">
+                        <div
+                          v-for="(condition, conditionIndex) in rule.conditions"
+                          :key="`${rule.id}-${conditionIndex}`"
+                          class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)_auto]"
+                        >
+                          <select v-model="condition.source" class="input w-full">
+                            <option value="provider_code">provider_code</option>
+                            <option value="provider_type">provider_type</option>
+                            <option value="message">message</option>
+                          </select>
+                          <select v-model="condition.operator" class="input w-full">
+                            <option value="equals">equals</option>
+                            <option value="contains_ci">contains_ci</option>
+                          </select>
+                          <input
+                            v-model.trim="condition.value"
+                            type="text"
+                            maxlength="256"
+                            class="input w-full"
+                            :placeholder="t('admin.settings.openaiCapacityQuarantine.conditionValue')"
+                          />
+                          <button
+                            type="button"
+                            class="btn btn-secondary btn-sm text-red-600 dark:text-red-400"
+                            :disabled="rule.conditions.length === 1"
+                            @click="removeOpenAICapacityMatchCondition(ruleIndex, conditionIndex)"
+                          >
+                            {{ t("common.delete") }}
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm mt-3"
+                        :disabled="rule.conditions.length >= 4"
+                        @click="addOpenAICapacityMatchCondition(ruleIndex)"
+                      >
+                        {{ t("admin.settings.openaiCapacityQuarantine.addCondition") }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <div class="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 class="font-medium text-gray-900 dark:text-white">
+                        {{ t("admin.settings.openaiCapacityQuarantine.groupPoliciesTitle") }}
+                      </h3>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t("admin.settings.openaiCapacityQuarantine.groupPoliciesHint") }}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      :disabled="availableOpenAICapacityGroups.length === 0"
+                      @click="addOpenAICapacityGroupPolicy"
+                    >
+                      {{ t("admin.settings.openaiCapacityQuarantine.addGroup") }}
+                    </button>
+                  </div>
+                  <p
+                    v-if="openAICapacityGroupsLoading"
+                    class="mt-3 text-xs text-gray-500 dark:text-gray-400"
+                  >
+                    {{ t("common.loading") }}
+                  </p>
+                  <p
+                    v-else-if="openAICapacityGroups.length === 0"
+                    class="mt-3 text-xs text-gray-500 dark:text-gray-400"
+                  >
+                    {{ t("admin.settings.openaiCapacityQuarantine.noOpenAIGroups") }}
+                  </p>
+                  <div v-else class="mt-3 space-y-3">
+                    <div
+                      v-for="(policy, policyIndex) in openAICapacityQuarantineForm.group_policies"
+                      :key="policy.group_id"
+                      class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+                    >
+                      <div class="flex items-center justify-between gap-3">
+                        <label class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <Toggle v-model="policy.enabled" />
+                          {{ t("admin.settings.openaiCapacityQuarantine.groupEnabled") }}
+                        </label>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm text-red-600 dark:text-red-400"
+                          @click="removeOpenAICapacityGroupPolicy(policyIndex)"
+                        >
+                          {{ t("common.delete") }}
+                        </button>
+                      </div>
+                      <div class="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {{ t("admin.settings.openaiCapacityQuarantine.group") }}
+                          </label>
+                          <select v-model.number="policy.group_id" class="input w-full">
+                            <option
+                              v-for="group in openAICapacityGroups"
+                              :key="group.id"
+                              :value="group.id"
+                            >
+                              {{ group.name }} (#{{ group.id }})
+                            </option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {{ t("admin.settings.openaiCapacityQuarantine.minRemaining") }}
+                          </label>
+                          <input v-model.number="policy.min_remaining_accounts" type="number" min="1" class="input w-full" />
+                        </div>
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {{ t("admin.settings.openaiCapacityQuarantine.maxQuarantinedFraction") }}
+                          </label>
+                          <input v-model.number="policy.max_quarantined_fraction" type="number" min="0.01" max="1" step="0.01" class="input w-full" />
+                        </div>
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {{ t("admin.settings.openaiCapacityQuarantine.globalSpikeAccounts") }}
+                          </label>
+                          <input v-model.number="policy.global_spike_distinct_accounts" type="number" min="1" class="input w-full" />
+                        </div>
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {{ t("admin.settings.openaiCapacityQuarantine.globalSpikeWindow") }}
+                          </label>
+                          <input v-model.number="policy.global_spike_window_seconds" type="number" min="1" max="3600" class="input w-full" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <h3 class="font-medium text-gray-900 dark:text-white">
+                    {{ t("admin.settings.openaiCapacityQuarantine.matcherTestTitle") }}
+                  </h3>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.openaiCapacityQuarantine.matcherTestHint") }}
+                  </p>
+                  <div class="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <input v-model.number="openAICapacityMatcherInput.http_status" type="number" min="0" max="599" class="input w-full" :placeholder="t('admin.settings.openaiCapacityQuarantine.httpStatus')" />
+                    <input v-model.trim="openAICapacityMatcherInput.provider_code" type="text" class="input w-full" :placeholder="t('admin.settings.openaiCapacityQuarantine.providerCode')" />
+                    <input v-model.trim="openAICapacityMatcherInput.provider_type" type="text" class="input w-full" :placeholder="t('admin.settings.openaiCapacityQuarantine.providerType')" />
+                    <input v-model.trim="openAICapacityMatcherInput.message" type="text" class="input w-full" :placeholder="t('admin.settings.openaiCapacityQuarantine.message')" />
+                  </div>
+                  <div class="mt-3 flex flex-wrap items-center gap-3">
+                    <button type="button" class="btn btn-secondary btn-sm" :disabled="openAICapacityMatcherTesting" @click="testOpenAICapacityMatcher">
+                      {{ openAICapacityMatcherTesting ? t("common.loading") : t("admin.settings.openaiCapacityQuarantine.testMatcher") }}
+                    </button>
+                    <span
+                      v-if="openAICapacityMatcherResult"
+                      class="text-sm"
+                      :class="openAICapacityMatcherResult.matched ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-300'"
+                    >
+                      {{ openAICapacityMatcherResult.matched
+                        ? t("admin.settings.openaiCapacityQuarantine.matcherMatched", { rule: openAICapacityMatcherResult.rule_id || '-' })
+                        : t("admin.settings.openaiCapacityQuarantine.matcherNotMatched", { reason: openAICapacityMatcherResult.rejected_by || '-' }) }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="flex justify-end border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    :disabled="openAICapacityQuarantineSaving"
+                    data-testid="save-openai-capacity-quarantine"
+                    @click="saveOpenAICapacityQuarantineSettings"
+                  >
+                    {{ openAICapacityQuarantineSaving ? t("common.saving") : t("common.save") }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+
           <!-- Rate Limit Cooldown (429) Settings -->
           <div class="card">
             <div
@@ -8084,6 +8501,9 @@ import type {
   DefaultSubscriptionSetting,
   DefaultPlatformQuotasMap,
   OpenAIFastPolicyRule,
+  OpenAICapacityMatcherInput,
+  OpenAICapacityMatcherResult,
+  OpenAICapacityQuarantineSettings,
   WeChatConnectMode,
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
@@ -8253,6 +8673,8 @@ const adminApiKeyMasked = ref("");
 const adminApiKeyOperating = ref(false);
 const newAdminApiKey = ref("");
 const subscriptionGroups = ref<AdminGroup[]>([]);
+const openAICapacityGroups = ref<AdminGroup[]>([]);
+const openAICapacityGroupsLoading = ref(true);
 
 // Upstream billing probe state
 const upstreamBillingProbeLoading = ref(true);
@@ -8276,6 +8698,58 @@ const overloadCooldownSaving = ref(false);
 const overloadCooldownForm = reactive({
   enabled: true,
   cooldown_minutes: 10,
+});
+
+function defaultOpenAICapacityQuarantineSettings(): OpenAICapacityQuarantineSettings {
+  return {
+    revision: 0,
+    mode: "disabled",
+    window_seconds: 300,
+    error_threshold: 3,
+    initial_cooldown_seconds: 600,
+    retrip_window_seconds: 3600,
+    retrip_cooldown_seconds: 1800,
+    max_cooldown_seconds: 1800,
+    half_open: {
+      max_requests: 1,
+      lease_seconds: 120,
+      renew_interval_seconds: 30,
+    },
+    match_rules: [],
+    group_policies: [],
+  };
+}
+
+const openAICapacityQuarantineLoading = ref(true);
+const openAICapacityQuarantineSaving = ref(false);
+const openAICapacityMatcherTesting = ref(false);
+const openAICapacityMatcherResult = ref<OpenAICapacityMatcherResult | null>(null);
+const openAICapacityQuarantineForm = reactive<OpenAICapacityQuarantineSettings>(
+  defaultOpenAICapacityQuarantineSettings(),
+);
+const openAICapacityMatcherInput = reactive<OpenAICapacityMatcherInput>({
+  http_status: 529,
+  provider_code: "model_capacity",
+  provider_type: "upstream_capacity",
+  message: "Our servers are currently overloaded. Please try again later.",
+});
+
+const openAICapacityModeHint = computed(() => {
+  switch (openAICapacityQuarantineForm.mode) {
+    case "shadow":
+      return t("admin.settings.openaiCapacityQuarantine.modeShadowHint");
+    case "enforce":
+      return t("admin.settings.openaiCapacityQuarantine.modeEnforceHint");
+    default:
+      return t("admin.settings.openaiCapacityQuarantine.modeDisabledHint");
+  }
+});
+
+const availableOpenAICapacityGroups = computed(() => {
+  const configured = new Set(
+    openAICapacityQuarantineForm.group_policies.map((policy) => policy.group_id),
+  );
+  return openAICapacityGroups.value.filter((group) => !configured.has(group.id));
 });
 
 // Rate Limit Cooldown (429) 状态
@@ -10977,6 +11451,162 @@ async function saveOverloadCooldownSettings() {
   }
 }
 
+function cloneOpenAICapacityQuarantineSettings(
+  settings: OpenAICapacityQuarantineSettings,
+): OpenAICapacityQuarantineSettings {
+  return {
+    ...settings,
+    half_open: { ...settings.half_open, max_requests: 1 },
+    match_rules: settings.match_rules.map((rule) => ({
+      ...rule,
+      conditions: rule.conditions.map((condition) => ({ ...condition })),
+    })),
+    group_policies: settings.group_policies.map((policy) => ({ ...policy })),
+  };
+}
+
+function applyOpenAICapacityQuarantineSettings(
+  settings: OpenAICapacityQuarantineSettings,
+) {
+  const cloned = cloneOpenAICapacityQuarantineSettings(settings);
+  Object.assign(openAICapacityQuarantineForm, cloned);
+}
+
+async function loadOpenAICapacityQuarantineSettings() {
+  openAICapacityQuarantineLoading.value = true;
+  try {
+    const settings = await adminAPI.settings.getOpenAICapacityQuarantineSettings();
+    applyOpenAICapacityQuarantineSettings(settings);
+  } catch (_error: unknown) {
+    // Keep disabled defaults. A policy that cannot be fetched must never look
+    // enabled in the control plane.
+  } finally {
+    openAICapacityQuarantineLoading.value = false;
+  }
+}
+
+async function saveOpenAICapacityQuarantineSettings() {
+  openAICapacityQuarantineSaving.value = true;
+  try {
+    const updated = await adminAPI.settings.updateOpenAICapacityQuarantineSettings(
+      cloneOpenAICapacityQuarantineSettings(openAICapacityQuarantineForm),
+    );
+    applyOpenAICapacityQuarantineSettings(updated);
+    appStore.showSuccess(t("admin.settings.openaiCapacityQuarantine.saved"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(
+        error,
+        t("admin.settings.openaiCapacityQuarantine.saveFailed"),
+      ),
+    );
+  } finally {
+    openAICapacityQuarantineSaving.value = false;
+  }
+}
+
+function nextOpenAICapacityRuleID(): string {
+  const existing = new Set(
+    openAICapacityQuarantineForm.match_rules.map((rule) => rule.id),
+  );
+  let suffix = openAICapacityQuarantineForm.match_rules.length + 1;
+  let candidate = `custom-capacity-${suffix}`;
+  while (existing.has(candidate)) {
+    suffix += 1;
+    candidate = `custom-capacity-${suffix}`;
+  }
+  return candidate;
+}
+
+function addOpenAICapacityMatchRule() {
+  openAICapacityQuarantineForm.match_rules.push({
+    id: nextOpenAICapacityRuleID(),
+    name: "Custom capacity signature",
+    enabled: true,
+    conditions: [
+      {
+        source: "message",
+        operator: "contains_ci",
+        value: "at capacity",
+      },
+    ],
+  });
+}
+
+function removeOpenAICapacityMatchRule(index: number) {
+  openAICapacityQuarantineForm.match_rules.splice(index, 1);
+}
+
+function addOpenAICapacityMatchCondition(ruleIndex: number) {
+  const rule = openAICapacityQuarantineForm.match_rules[ruleIndex];
+  if (!rule || rule.conditions.length >= 4) return;
+  rule.conditions.push({
+    source: "message",
+    operator: "contains_ci",
+    value: "",
+  });
+}
+
+function removeOpenAICapacityMatchCondition(
+  ruleIndex: number,
+  conditionIndex: number,
+) {
+  const rule = openAICapacityQuarantineForm.match_rules[ruleIndex];
+  if (!rule || rule.conditions.length <= 1) return;
+  rule.conditions.splice(conditionIndex, 1);
+}
+
+function addOpenAICapacityGroupPolicy() {
+  const group = availableOpenAICapacityGroups.value[0];
+  if (!group) return;
+  openAICapacityQuarantineForm.group_policies.push({
+    group_id: group.id,
+    enabled: true,
+    min_remaining_accounts: 2,
+    max_quarantined_fraction: 0.25,
+    global_spike_distinct_accounts: 5,
+    global_spike_window_seconds: 120,
+  });
+}
+
+function removeOpenAICapacityGroupPolicy(index: number) {
+  openAICapacityQuarantineForm.group_policies.splice(index, 1);
+}
+
+async function loadOpenAICapacityGroups() {
+  openAICapacityGroupsLoading.value = true;
+  try {
+    const groups = await adminAPI.groups.getAll("openai");
+    openAICapacityGroups.value = groups.filter(
+      (group) => group.platform === "openai" && group.status === "active",
+    );
+  } catch (_error: unknown) {
+    openAICapacityGroups.value = [];
+  } finally {
+    openAICapacityGroupsLoading.value = false;
+  }
+}
+
+async function testOpenAICapacityMatcher() {
+  openAICapacityMatcherTesting.value = true;
+  openAICapacityMatcherResult.value = null;
+  try {
+    openAICapacityMatcherResult.value =
+      await adminAPI.settings.testOpenAICapacityQuarantineMatcher({
+        ...openAICapacityMatcherInput,
+      });
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(
+        error,
+        t("admin.settings.openaiCapacityQuarantine.matcherTestFailed"),
+      ),
+    );
+  } finally {
+    openAICapacityMatcherTesting.value = false;
+  }
+}
+
 // Panel API Rate Limit 方法
 async function loadPanelRateLimitSettings() {
   panelRateLimitLoading.value = true;
@@ -11679,6 +12309,8 @@ onMounted(() => {
   loadUpstreamBillingProbeSettings();
   loadOllamaCloudUsageSettings();
   loadOverloadCooldownSettings();
+  loadOpenAICapacityQuarantineSettings();
+  loadOpenAICapacityGroups();
   loadRateLimit429CooldownSettings();
   loadPanelRateLimitSettings();
   loadStreamTimeoutSettings();

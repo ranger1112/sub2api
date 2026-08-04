@@ -53,6 +53,40 @@ func (r *settingRepository) Set(ctx context.Context, key, value string) error {
 		Exec(ctx)
 }
 
+// CompareAndSwapSetting atomically writes a setting only when the value observed by
+// the caller is still current. It is deliberately kept outside service.SettingRepository
+// so existing lightweight test repositories do not need to implement a production-only
+// concurrency primitive.
+func (r *settingRepository) CompareAndSwapSetting(ctx context.Context, key string, expectedValue string, expectedExists bool, value string) (bool, error) {
+	now := time.Now()
+	if !expectedExists {
+		err := r.client.Setting.
+			Create().
+			SetKey(key).
+			SetValue(value).
+			SetUpdatedAt(now).
+			Exec(ctx)
+		if err == nil {
+			return true, nil
+		}
+		if ent.IsConstraintError(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	updated, err := r.client.Setting.
+		Update().
+		Where(setting.KeyEQ(key), setting.ValueEQ(expectedValue)).
+		SetValue(value).
+		SetUpdatedAt(now).
+		Save(ctx)
+	if err != nil {
+		return false, err
+	}
+	return updated == 1, nil
+}
+
 func (r *settingRepository) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
 	if len(keys) == 0 {
 		return map[string]string{}, nil

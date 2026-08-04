@@ -1199,6 +1199,99 @@ export async function updateOverloadCooldownSettings(
   return data;
 }
 
+// ==================== OpenAI Capacity Quarantine Settings ====================
+
+/**
+ * Explicit rollout mode for the OpenAI capacity circuit breaker. `shadow`
+ * evaluates and records candidates without changing account admission;
+ * `enforce` lets the runtime isolation service act on a matched threshold.
+ */
+export type OpenAICapacityQuarantineMode = "disabled" | "shadow" | "enforce";
+
+export interface OpenAICapacityHalfOpenPolicy {
+  max_requests: number;
+  lease_seconds: number;
+  renew_interval_seconds: number;
+}
+
+/** A small, backend-validated matcher DSL; arbitrary regexp is intentionally unsupported. */
+export interface OpenAICapacityMatchCondition {
+  source: "provider_code" | "provider_type" | "message";
+  operator: "equals" | "contains_ci";
+  value: string;
+}
+
+export interface OpenAICapacityMatchRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  conditions: OpenAICapacityMatchCondition[];
+}
+
+export interface OpenAICapacityGroupPolicy {
+  group_id: number;
+  enabled: boolean;
+  min_remaining_accounts: number;
+  max_quarantined_fraction: number;
+  global_spike_distinct_accounts: number;
+  global_spike_window_seconds: number;
+}
+
+export interface OpenAICapacityQuarantineSettings {
+  revision: number;
+  mode: OpenAICapacityQuarantineMode;
+  window_seconds: number;
+  error_threshold: number;
+  initial_cooldown_seconds: number;
+  retrip_window_seconds: number;
+  retrip_cooldown_seconds: number;
+  max_cooldown_seconds: number;
+  half_open: OpenAICapacityHalfOpenPolicy;
+  match_rules: OpenAICapacityMatchRule[];
+  group_policies: OpenAICapacityGroupPolicy[];
+}
+
+export interface OpenAICapacityMatcherInput {
+  http_status: number;
+  provider_code: string;
+  provider_type: string;
+  message: string;
+}
+
+export interface OpenAICapacityMatcherResult {
+  matched: boolean;
+  rule_id?: string;
+  rejected_by?: string;
+}
+
+export async function getOpenAICapacityQuarantineSettings(): Promise<OpenAICapacityQuarantineSettings> {
+  const { data } = await apiClient.get<OpenAICapacityQuarantineSettings>(
+    "/admin/settings/openai-capacity-quarantine",
+  );
+  return data;
+}
+
+export async function updateOpenAICapacityQuarantineSettings(
+  settings: OpenAICapacityQuarantineSettings,
+): Promise<OpenAICapacityQuarantineSettings> {
+  const { data } = await apiClient.put<OpenAICapacityQuarantineSettings>(
+    "/admin/settings/openai-capacity-quarantine",
+    settings,
+  );
+  return data;
+}
+
+/** Evaluates only normalized, redacted error fields against the saved policy. */
+export async function testOpenAICapacityQuarantineMatcher(
+  input: OpenAICapacityMatcherInput,
+): Promise<OpenAICapacityMatcherResult> {
+  const { data } = await apiClient.post<OpenAICapacityMatcherResult>(
+    "/admin/settings/openai-capacity-quarantine/test-matcher",
+    input,
+  );
+  return data;
+}
+
 // ==================== 429 Rate Limit Cooldown Settings ====================
 
 export interface RateLimit429CooldownSettings {
@@ -1480,6 +1573,9 @@ export const settingsAPI = {
   deleteAdminApiKey,
   getOverloadCooldownSettings,
   updateOverloadCooldownSettings,
+  getOpenAICapacityQuarantineSettings,
+  updateOpenAICapacityQuarantineSettings,
+  testOpenAICapacityQuarantineMatcher,
   getRateLimit429CooldownSettings,
   updateRateLimit429CooldownSettings,
   getPanelRateLimitSettings,

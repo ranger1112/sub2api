@@ -560,6 +560,10 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 529过载冷却配置
 		adminSettings.GET("/overload-cooldown", h.Admin.Setting.GetOverloadCooldownSettings)
 		adminSettings.PUT("/overload-cooldown", h.Admin.Setting.UpdateOverloadCooldownSettings)
+		// OpenAI Capacity 自动临时摘除策略
+		adminSettings.GET("/openai-capacity-quarantine", h.Admin.Setting.GetOpenAICapacityQuarantineSettings)
+		adminSettings.PUT("/openai-capacity-quarantine", h.Admin.Setting.UpdateOpenAICapacityQuarantineSettings)
+		adminSettings.POST("/openai-capacity-quarantine/test-matcher", h.Admin.Setting.TestOpenAICapacityQuarantineMatcher)
 		// 429默认回避配置
 		adminSettings.GET("/rate-limit-429-cooldown", h.Admin.Setting.GetRateLimit429CooldownSettings)
 		adminSettings.PUT("/rate-limit-429-cooldown", h.Admin.Setting.UpdateRateLimit429CooldownSettings)

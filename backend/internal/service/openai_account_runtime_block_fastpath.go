@@ -83,18 +83,22 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, canonicalModel[0]) {
 		return true
 	}
+	capacityShouldFailover := false
 	if account.Platform == PlatformOpenAI {
 		model := ""
 		if len(canonicalModel) > 0 {
 			model = canonicalModel[0]
 		}
 		s.ReportOpenAIAccountScheduleResult(account.ID, model, false, nil)
+		// Capacity state is deliberately separate from temp_unschedulable_*.
+		// The matcher itself hard-excludes auth, quota and 429 signals.
+		capacityShouldFailover = s.recordOpenAICapacityUpstreamError(stateCtx, account, statusCode, responseBody, model)
 	}
 	if statusCode == http.StatusTooManyRequests {
 		s.markOpenAIOAuth429RateLimited(stateCtx, account, headers, responseBody)
 	}
 	if s.rateLimitService == nil {
-		return false
+		return capacityShouldFailover
 	}
 	shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
 	modelTempMatched := statusCode != http.StatusUnauthorized && tempUnschedulableModel(stateCtx, nil) != "" &&
@@ -123,7 +127,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 			)
 		}
 	}
-	return shouldDisable
+	return shouldDisable || capacityShouldFailover
 }
 
 func shouldCooldownOpenAITransientUpstreamError(statusCode int, responseBody []byte) bool {

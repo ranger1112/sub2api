@@ -535,6 +535,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireCapacityVetoed {
+			recordOpenAICapacityVeto(failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
@@ -597,7 +601,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						streamStarted = true
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+						h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(reqModel), false, nil)
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
@@ -657,7 +661,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					reqLog.Warn("openai.upstream_failover_switching", failoverSwitchFields...)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+				h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(reqModel), false, nil)
 				h.gatewayService.RecordOpenAIResponsesForwardFailure(c.Request.Context(), account.ID, err)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
@@ -683,9 +687,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+			h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), nil)
+			h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), nil)
 		}
 		h.gatewayService.RecordOpenAIResponsesSuccess(account.ID)
 
@@ -1094,6 +1098,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireCapacityVetoed {
+			recordOpenAICapacityVeto(failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
@@ -1150,7 +1158,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
+						h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
@@ -1202,7 +1210,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					)
 					return
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
+				h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
 				wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
 				reqLog.Warn("openai_messages.forward_failed",
 					zap.Int64("account_id", account.ID),
@@ -1213,9 +1221,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs)
+			h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
+			h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
 		}
 
 		userAgent := c.GetHeader("User-Agent")
@@ -1384,7 +1392,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 	return wrapReleaseOnDone(ctx, userReleaseFunc), true
 }
 
-// openAISlotAcquireResult 是账号槽位获取的三态结果。
+// openAISlotAcquireResult 是账号槽位获取的四态结果。
 type openAISlotAcquireResult int
 
 const (
@@ -1395,7 +1403,58 @@ const (
 	// 未写任何响应；调用方应经 recordOpenAIProfitVeto 把该账号加入本请求排除集
 	// 后重新选号，全池耗尽由下一轮选号返回标准 no available accounts。
 	openAISlotAcquireProfitVetoed
+	// openAISlotAcquireCapacityVetoed：Capacity 冷却或已有 half-open 探针。
+	// 槽位已释放且未写响应；调用方仅排除该账号并重新选号。
+	openAISlotAcquireCapacityVetoed
 )
+
+const openAICapacityAdmissionCompleteContextKey = "openai_capacity_admission_complete"
+
+// acquireOpenAICapacityAdmission composes the ordinary account slot with the
+// optional Capacity half-open lease. If Capacity rejects, the ordinary slot is
+// released before the caller retries another account.
+func (h *OpenAIGatewayHandler) acquireOpenAICapacityAdmission(c *gin.Context, ctx context.Context, account *service.Account, accountRelease func()) (func(), bool) {
+	capacityRelease, completeSuccess, admitted := h.gatewayService.AcquireOpenAICapacityAdmission(ctx, account)
+	if !admitted {
+		if accountRelease != nil {
+			accountRelease()
+		}
+		return nil, false
+	}
+	if c != nil {
+		c.Set(openAICapacityAdmissionCompleteContextKey, completeSuccess)
+	}
+	return func() {
+		if capacityRelease != nil {
+			capacityRelease()
+		}
+		if accountRelease != nil {
+			accountRelease()
+		}
+	}, true
+}
+
+// reportOpenAIAccountScheduleResult preserves scheduler reporting and closes a
+// Capacity half-open state only through the success callback issued to this
+// concrete admitted request. A late success from another request has no such
+// callback and cannot recover the account.
+func (h *OpenAIGatewayHandler) reportOpenAIAccountScheduleResult(c *gin.Context, accountID int64, model string, success bool, firstTokenMs *int) {
+	h.gatewayService.ReportOpenAIAccountScheduleResult(accountID, model, success, firstTokenMs)
+	if !success || c == nil {
+		return
+	}
+	if value, ok := c.Get(openAICapacityAdmissionCompleteContextKey); ok {
+		if completeSuccess, ok := value.(func()); ok && completeSuccess != nil {
+			completeSuccess()
+		}
+	}
+}
+
+func recordOpenAICapacityVeto(failedAccountIDs map[int64]struct{}, accountID int64) {
+	if accountID > 0 {
+		failedAccountIDs[accountID] = struct{}{}
+	}
+}
 
 // openAIWSTurnPricing 持有 WebSocket 连接内「当前 turn」的计费定价时刻。
 // 由 BeforeTurn 在每个 turn 开始时冻结，AfterTurn 的用量提交读取它；turn 在
@@ -1482,6 +1541,11 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		}
 		account = latest
 		selection.Account = latest
+		combinedRelease, admitted := h.acquireOpenAICapacityAdmission(c, ctx, account, selection.ReleaseFunc)
+		if !admitted {
+			reqLog.Debug("openai.account_slot_capacity_vetoed", zap.Int64("account_id", account.ID))
+			return nil, openAISlotAcquireCapacityVetoed
+		}
 		// 调度器已抢槽路径无门时由选号内部完成 eager 绑定；门下选号内部
 		// 推迟绑定，这里在终检通过后补准入后绑定。
 		if selection.ProfitGateActive() {
@@ -1489,7 +1553,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), openAISlotAcquireOK
+		return wrapReleaseOnDone(ctx, combinedRelease), openAISlotAcquireOK
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
@@ -1520,10 +1584,15 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		}
 		account = latest
 		selection.Account = latest
+		combinedRelease, admitted := h.acquireOpenAICapacityAdmission(c, ctx, account, fastReleaseFunc)
+		if !admitted {
+			reqLog.Debug("openai.account_slot_capacity_vetoed", zap.Int64("account_id", account.ID))
+			return nil, openAISlotAcquireCapacityVetoed
+		}
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return wrapReleaseOnDone(ctx, fastReleaseFunc), openAISlotAcquireOK
+		return wrapReleaseOnDone(ctx, combinedRelease), openAISlotAcquireOK
 	}
 
 	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(ctx, account.ID, selection.WaitPlan.MaxWaiting)
@@ -1575,10 +1644,15 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	}
 	account = latest
 	selection.Account = latest
+	combinedRelease, admitted := h.acquireOpenAICapacityAdmission(c, ctx, account, accountReleaseFunc)
+	if !admitted {
+		reqLog.Debug("openai.account_slot_capacity_vetoed", zap.Int64("account_id", account.ID))
+		return nil, openAISlotAcquireCapacityVetoed
+	}
 	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
-	return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
+	return wrapReleaseOnDone(ctx, combinedRelease), openAISlotAcquireOK
 }
 
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint
@@ -1823,7 +1897,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		if failoverErr.ShouldReportAccountScheduleFailure() {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+			h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(reqModel), false, nil)
 		}
 		releaseAccountSlot()
 		if !failoverErr.ShouldRetryNextAccount() {
@@ -1978,6 +2052,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			selection.Account = latest
 			accountReleaseFunc = fastReleaseFunc
 		}
+		capacityReleaseFunc, capacityAdmitted := h.acquireOpenAICapacityAdmission(c, admissionCtx, account, accountReleaseFunc)
+		if !capacityAdmitted {
+			reqLog.Debug("openai.websocket_account_slot_capacity_vetoed", zap.Int64("account_id", account.ID))
+			recordOpenAICapacityVeto(failedAccountIDs, account.ID)
+			continue
+		}
+		accountReleaseFunc = capacityReleaseFunc
 		// 准入完成：门并入连接 ctx，turn 级复核与 failover 重选共用。
 		ctx = admissionCtx
 		currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
@@ -2116,6 +2197,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// CyberBlocked 必须在 submit 前同步预捕获（task 闭包由 worker 池异步执行，
 				// 届时 defer 已清除标记）。
 				defer clearCyberPolicyTurnState(c)
+				// releaseTurnSlots may release the Capacity probe lease, so complete the
+				// owner-bound success transition first.
+				if openAIForwardSucceededForScheduling(result) {
+					if value, ok := c.Get(openAICapacityAdmissionCompleteContextKey); ok {
+						if completeSuccess, ok := value.(func()); ok && completeSuccess != nil {
+							completeSuccess()
+						}
+					}
+				}
 				releaseTurnSlots()
 				turnRequestedModel := reqModel
 				turnUpstreamModel := ""
@@ -2174,7 +2264,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if scheduleModel == "" {
 					scheduleModel = turnRequestedModel
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+				h.reportOpenAIAccountScheduleResult(c, account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
 				inboundEndpoint := GetInboundEndpoint(c)
 				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
 				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
@@ -2255,7 +2345,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 
 			if shouldReportOpenAIWSProxyAccountFailure(err) {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+				h.reportOpenAIAccountScheduleResult(c, account.ID, account.GetMappedModel(reqModel), false, nil)
 			}
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 			proxyFailedFields := []zap.Field{

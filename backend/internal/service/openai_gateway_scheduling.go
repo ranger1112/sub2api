@@ -1272,6 +1272,9 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccount(ctx context.
 	if s.isOpenAIAccountRequestRuntimeBlocked(fresh, requestedModel) {
 		return nil
 	}
+	if s.IsOpenAICapacityQuarantined(ctx, fresh) {
+		return nil
+	}
 	effectiveDecision := s.evaluateOpenAIEffectiveSchedulable(fresh, "openai.resolve")
 	if s.effectiveSchedulableConfig().Enabled && !effectiveDecision.Schedulable {
 		return nil
@@ -1311,6 +1314,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 		if s.isOpenAIProxyStreamQuarantined(ctx, account) {
 			return nil
 		}
+		if s.IsOpenAICapacityQuarantined(ctx, account) {
+			return nil
+		}
 		return account
 	}
 
@@ -1331,6 +1337,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 		return nil
 	}
 	if s.isOpenAIProxyStreamQuarantined(ctx, latest) {
+		return nil
+	}
+	if s.IsOpenAICapacityQuarantined(ctx, latest) {
 		return nil
 	}
 	return latest
