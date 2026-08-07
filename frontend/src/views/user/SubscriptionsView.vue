@@ -65,7 +65,7 @@
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                     : subscription.status === 'expired'
                       ? 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-400'
-                      : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                      : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
                 ]"
               >
                 {{ t(`userSubscriptions.status.${subscription.status}`) }}
@@ -226,7 +226,7 @@
                 !subscription.group?.weekly_limit_usd &&
                 !subscription.group?.monthly_limit_usd
               "
-              class="flex items-center justify-center rounded-xl bg-emerald-50 py-6 dark:bg-emerald-900/20"
+              class="flex items-center justify-center rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 py-6 dark:from-emerald-900/20 dark:to-teal-900/20"
             >
               <div class="flex items-center gap-3">
                 <span class="text-4xl text-emerald-600 dark:text-emerald-400">∞</span>
@@ -256,10 +256,15 @@ import subscriptionsAPI from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatDateOnly } from '@/utils/format'
+import { formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
-import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
+import {
+  getExpirationDateRelation,
+  getRemainingDurationParts,
+  isOneTimeDailyQuota,
+  type RemainingDurationParts
+} from '@/utils/subscriptionQuota'
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
@@ -307,9 +312,9 @@ function getProgressWidth(used: number | undefined, limit: number | null | undef
 function getProgressBarClass(used: number | undefined, limit: number | null | undefined): string {
   if (!limit || limit === 0) return 'bg-gray-400'
   const percentage = ((used || 0) / limit) * 100
-  if (percentage >= 90) return 'bg-rose-500'
-  if (percentage >= 70) return 'bg-amber-500'
-  return 'bg-emerald-500'
+  if (percentage >= 90) return 'bg-red-500'
+  if (percentage >= 70) return 'bg-orange-500'
+  return 'bg-green-500'
 }
 
 function formatExpirationDate(expiresAt: string): string {
@@ -317,17 +322,20 @@ function formatExpirationDate(expiresAt: string): string {
   const expires = new Date(expiresAt)
   const diff = expires.getTime() - now.getTime()
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+  const relation = getExpirationDateRelation(expires, now)
 
-  if (days < 0) {
+  if (relation === null) return ''
+
+  if (relation === 'expired') {
     return t('userSubscriptions.status.expired')
   }
 
-  const dateStr = formatDateOnly(expires)
+  const dateStr = formatDateTimeToMinute(expires)
 
-  if (days === 0) {
+  if (relation === 'today') {
     return `${dateStr} (${t('common.today')})`
   }
-  if (days === 1) {
+  if (relation === 'tomorrow') {
     return `${dateStr} (${t('common.tomorrow')})`
   }
 
@@ -340,9 +348,9 @@ function getExpirationClass(expiresAt: string): string {
   const diff = expires.getTime() - now.getTime()
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
 
-  if (days <= 0) return 'text-rose-600 dark:text-rose-400 font-medium'
-  if (days <= 3) return 'text-rose-600 dark:text-rose-400'
-  if (days <= 7) return 'text-amber-600 dark:text-amber-400'
+  if (diff <= 0) return 'text-red-600 dark:text-red-400 font-medium'
+  if (days <= 3) return 'text-red-600 dark:text-red-400'
+  if (days <= 7) return 'text-orange-600 dark:text-orange-400'
   return 'text-gray-700 dark:text-gray-300'
 }
 

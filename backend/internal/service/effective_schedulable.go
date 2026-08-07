@@ -176,3 +176,30 @@ func logEffectiveSchedulableShadow(scope string, accountID int64, decision Effec
 		"applied", applied,
 	)
 }
+
+func (s *OpenAIGatewayService) effectiveSchedulableConfig() EffectiveSchedulableConfig {
+	return effectiveSchedulableConfigFromScheduling(s.schedulingConfig())
+}
+
+func (s *OpenAIGatewayService) evaluateOpenAIEffectiveSchedulable(account *Account, scope string) EffectiveSchedulableDecision {
+	cfg := s.effectiveSchedulableConfig()
+	health := EffectiveSchedulableRuntimeHealth{
+		RuntimeBlockedUntil: s.openAIAccountRuntimeBlockUntilValue(account),
+	}
+	if stats := s.ensureOpenAIAccountRuntimeStats(); stats != nil && account != nil {
+		errorRate, ttft, hasTTFT := stats.snapshot(account.ID)
+		health.ErrorRate = errorRate
+		health.HasErrorRate = true
+		health.TTFTMS = ttft
+		health.HasTTFT = hasTTFT
+	}
+	decision := EvaluateEffectiveSchedulable(account, health, time.Now(), cfg)
+	if cfg.ShadowEnabled {
+		accountID := int64(0)
+		if account != nil {
+			accountID = account.ID
+		}
+		logEffectiveSchedulableShadow(scope, accountID, decision, cfg.Enabled)
+	}
+	return decision
+}
