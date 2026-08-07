@@ -613,7 +613,7 @@
               @click="poolModeEnabled = !poolModeEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                poolModeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                poolModeEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -677,7 +677,7 @@
               @click="customErrorCodesEnabled = !customErrorCodesEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                customErrorCodesEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                customErrorCodesEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -801,7 +801,7 @@
             @click="grokOAuthCustomBaseUrlEnabled = !grokOAuthCustomBaseUrlEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              grokOAuthCustomBaseUrlEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              grokOAuthCustomBaseUrlEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -838,7 +838,7 @@
             @click="headerOverrideEnabled = !headerOverrideEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              headerOverrideEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              headerOverrideEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -1395,7 +1395,7 @@
               @click="poolModeEnabled = !poolModeEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                poolModeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                poolModeEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -1576,7 +1576,7 @@
             @click="tempUnschedEnabled = !tempUnschedEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              tempUnschedEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              tempUnschedEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -1729,7 +1729,7 @@
             @click="interceptWarmupRequests = !interceptWarmupRequests"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              interceptWarmupRequests ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              interceptWarmupRequests ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -1838,7 +1838,7 @@
             @click="openaiPassthroughEnabled = !openaiPassthroughEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              openaiPassthroughEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              openaiPassthroughEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -1869,7 +1869,7 @@
             @click="openaiFlattenNamespacesEnabled = !openaiFlattenNamespacesEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              openaiFlattenNamespacesEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              openaiFlattenNamespacesEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -2060,7 +2060,7 @@
             @click="anthropicPassthroughEnabled = !anthropicPassthroughEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              anthropicPassthroughEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              anthropicPassthroughEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -2234,7 +2234,7 @@
             @click="openAILongContextBillingEnabled = !openAILongContextBillingEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              openAILongContextBillingEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              openAILongContextBillingEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -2263,7 +2263,7 @@
             @click="codexCLIOnlyEnabled = !codexCLIOnlyEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              codexCLIOnlyEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              codexCLIOnlyEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -2289,7 +2289,7 @@
             @click="codexCLIOnlyAppServerEnabled = !codexCLIOnlyAppServerEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              codexCLIOnlyAppServerEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              codexCLIOnlyAppServerEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -2393,7 +2393,7 @@
             @click="autoPauseOnExpired = !autoPauseOnExpired"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              autoPauseOnExpired ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              autoPauseOnExpired ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
             <span
@@ -2418,7 +2418,7 @@
               @click="autoPause5hDisabled = !autoPause5hDisabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                autoPause5hDisabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                autoPause5hDisabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
               data-testid="auto-pause-5h-disabled"
             >
@@ -2454,7 +2454,7 @@
               @click="autoPause7dDisabled = !autoPause7dDisabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                autoPause7dDisabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                autoPause7dDisabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
               data-testid="auto-pause-7d-disabled"
             >
@@ -2510,7 +2510,7 @@
               @click="windowCostEnabled = !windowCostEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                windowCostEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                windowCostEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -2570,7 +2570,7 @@
               @click="sessionLimitEnabled = !sessionLimitEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                sessionLimitEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                sessionLimitEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -2627,7 +2627,7 @@
               @click="rpmLimitEnabled = !rpmLimitEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                rpmLimitEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                rpmLimitEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -2740,7 +2740,7 @@
               @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                tlsFingerprintEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -2775,7 +2775,7 @@
               @click="sessionIdMaskingEnabled = !sessionIdMaskingEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                sessionIdMaskingEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                sessionIdMaskingEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -2802,7 +2802,7 @@
               @click="cacheTTLOverrideEnabled = !cacheTTLOverrideEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                cacheTTLOverrideEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                cacheTTLOverrideEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span
@@ -2842,7 +2842,7 @@
               @click="customBaseUrlEnabled = !customBaseUrlEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                customBaseUrlEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                customBaseUrlEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
               ]"
             >
               <span

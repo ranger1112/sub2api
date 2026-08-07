@@ -671,7 +671,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 createForm.is_exclusive
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -770,7 +770,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
                 createModelsListState.enabled
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -1312,7 +1312,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 createForm.mcp_xml_inject
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -1372,7 +1372,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 createForm.claude_code_only
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -1462,7 +1462,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 createForm.allow_live
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -1500,7 +1500,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 createForm.allow_messages_dispatch
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -1739,7 +1739,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 createForm.require_oauth_only
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -1776,7 +1776,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 createForm.require_privacy_set
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -1854,7 +1854,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 createForm.model_routing_enabled
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -2271,7 +2271,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 editForm.is_exclusive
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -2375,7 +2375,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
                 editModelsListState.enabled
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -2917,7 +2917,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 editForm.mcp_xml_inject
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -2975,7 +2975,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 editForm.claude_code_only
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
@@ -3063,7 +3063,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 editForm.allow_live
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -3101,7 +3101,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 editForm.allow_messages_dispatch
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -3340,7 +3340,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 editForm.require_oauth_only
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -3377,7 +3377,7 @@
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
                 editForm.require_privacy_set
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600'
               "
             >
@@ -3454,7 +3454,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 editForm.model_routing_enabled
-                  ? 'bg-primary-500'
+                  ? 'bg-green-500'
                   : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
