@@ -4034,9 +4034,8 @@ import {
   buildKiroCredentials,
   validateKiroCredentials,
   type KiroAccountType,
-  type KiroAuthMethod
+  type KiroAuthMethod,
   applyHeaderOverride,
-  applyInterceptWarmup,
   isHeaderOverrideCapable,
   validateHeaderOverrideRows,
   type HeaderOverrideRow

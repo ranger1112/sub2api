@@ -3027,9 +3027,8 @@ import {
   applyInterceptWarmup,
   buildKiroCredentials,
   type KiroAuthMethod,
-  type KiroCredentialInputs
+  type KiroCredentialInputs,
   applyHeaderOverride,
-  applyInterceptWarmup,
   applyPlanType,
   buildPlanTypeOptions,
   readPlanType,
