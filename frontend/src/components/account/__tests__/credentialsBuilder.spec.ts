@@ -7,9 +7,8 @@ import {
   applyInterceptWarmup,
   buildKiroCredentials,
   validateKiroCredentials,
-  type KiroCredentialInputs
+  type KiroCredentialInputs,
   applyHeaderOverride,
-  applyInterceptWarmup,
   applyPlanType,
   buildHeaderOverridesObject,
   buildPlanTypeOptions,

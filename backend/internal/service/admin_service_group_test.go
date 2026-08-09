@@ -23,10 +23,6 @@ type groupRepoStubForAdmin struct {
 	getErr                     error  // GetByID 返回的错误
 	listActiveByPlatformGroups []Group
 	listActiveByPlatformErr    error
-	created  *Group // 记录 Create 调用的参数
-	updated  *Group // 记录 Update 调用的参数
-	getByID  *Group // GetByID 返回值
-	getErr   error  // GetByID 返回的错误
 	createID int64
 
 	getByIDByID map[int64]*Group

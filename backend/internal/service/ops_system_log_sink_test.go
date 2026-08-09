@@ -59,7 +59,6 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "access component from fields (real zap path) error request",
 			name: "rejected access excluded from database sink",
 			event: &logger.LogEvent{
 				Level:     "info",

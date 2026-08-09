@@ -151,3 +151,6 @@ output/
 .omc/
 **/.omc/
 tools/__pycache__/
+
+# Vitest / Vite cache at repo root
+.vite/
