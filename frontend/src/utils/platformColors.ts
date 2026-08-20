@@ -74,9 +74,11 @@ const ACCENT: Record<Platform, string> = {
   antigravity: '#a855f7', // purple-500
   gemini: '#3b82f6', // blue-500
   grok: '#71717a', // zinc-500
-  kiro: '#14b8a6', // teal-500  kimi: '#ec4899', // pink-500
+  kiro: '#14b8a6', // teal-500
+  kimi: '#ec4899', // pink-500
   zhipu: '#6366f1', // indigo-500
-  deepseek: '#14b8a6', // teal-500  composite: '#06b6d4', // cyan-500
+  deepseek: '#14b8a6', // teal-500
+  composite: '#06b6d4', // cyan-500
 }
 const ACCENT_DEFAULT = '#14b8a6' // primary-500 (teal)
 
