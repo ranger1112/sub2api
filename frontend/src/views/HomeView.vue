@@ -90,18 +90,37 @@
     </footer>
   </div>
 
-  <!-- Default Home Page: single-viewport layout, no scroll -->
-  <div v-else class="relative flex h-screen flex-col overflow-hidden bg-white dark:bg-dark-950">
-    <!-- Page-wide faint grid -->
-    <div
-      class="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(rgb(var(--color-primary-500)/0.05)_1px,transparent_1px),linear-gradient(90deg,rgb(var(--color-primary-500)/0.05)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_65%_60%_at_50%_0%,black_35%,transparent_100%)]"
-    ></div>
+  <!-- Default Home Page -->
+  <div
+    v-else
+    class="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
+  >
+    <!-- Background Decorations -->
+    <div class="pointer-events-none absolute inset-0 overflow-hidden">
+      <div
+        class="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary-400/20 blur-3xl"
+      ></div>
+      <div
+        class="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-primary-500/15 blur-3xl"
+      ></div>
+      <div
+        class="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-primary-300/10 blur-3xl"
+      ></div>
+      <div
+        class="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary-400/10 blur-3xl"
+      ></div>
+      <div
+        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
+      ></div>
+    </div>
+
     <!-- Header -->
     <header class="relative z-20 px-6 py-4">
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <!-- Logo -->
         <div class="flex items-center">
-          <div class="h-8 w-8 overflow-hidden rounded-lg shadow-sm">            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
+            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </div>
         </div>
 
@@ -208,55 +227,19 @@
             </div>
           </div>
 
-        <!-- Headline -->
-        <h1
-          class="mt-6 max-w-2xl text-4xl font-semibold leading-[1.05] tracking-[-0.03em] text-gray-900 dark:text-white sm:text-5xl lg:text-6xl"
-        >
-          {{ t('home.heroSubtitle') }}
-        </h1>
-
-        <!-- Subtitle -->
-        <p class="mt-5 max-w-lg text-base leading-relaxed text-gray-600 dark:text-dark-400 sm:text-lg">
-          {{ siteSubtitle }}
-        </p>
-
-        <!-- CTAs -->
-        <div class="mt-8 flex flex-col items-center gap-3 sm:flex-row">
-          <router-link
-            :to="isAuthenticated ? dashboardPath : '/login'"
-            class="btn btn-primary w-full px-7 py-3 text-base shadow-lg shadow-primary-500/25 sm:w-auto"
-          >
-            {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
-            <Icon name="arrowRight" size="md" :stroke-width="2" />
-          </router-link>
-          <a
-            v-if="docUrl"
-            :href="docUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="btn btn-secondary w-full px-7 py-3 text-base sm:w-auto"
-          >
-            {{ t('home.docs') }}
-          </a>
-          <router-link
-            v-else-if="!isAuthenticated"
-            to="/login"
-            class="btn btn-secondary w-full px-7 py-3 text-base sm:w-auto"
-          >
-            {{ t('home.login') }}
-          </router-link>
-        </div>
-
-        <!-- Terminal window preview: wide + flat, product's visual centerpiece -->
-        <div class="mt-10 flex w-full justify-center">
-          <div class="terminal-glow">
-            <div class="terminal-window">
-              <!-- Window header -->
-              <div class="terminal-header">
-                <div class="terminal-buttons">
-                  <span class="btn-close"></span>
-                  <span class="btn-minimize"></span>
-                  <span class="btn-maximize"></span>                </div>
+          <!-- Right: Terminal Animation -->
+          <div class="flex flex-1 justify-center lg:justify-end">
+            <div class="terminal-container">
+              <div class="terminal-window">
+                <!-- Window header -->
+                <div class="terminal-header">
+                  <div class="terminal-buttons">
+                    <span class="btn-close"></span>
+                    <span class="btn-minimize"></span>
+                    <span class="btn-maximize"></span>
+                  </div>
+                  <span class="terminal-title">terminal</span>
+                </div>
                 <!-- Terminal content -->
                 <div class="terminal-body">
                   <div class="code-line line-1">
@@ -526,12 +509,7 @@ const appStore = useAppStore()
 
 // Site settings - directly from appStore (already initialized from injected config)
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
-const siteLogo = computed(() =>
-  sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', {
-    allowRelative: true,
-    allowDataUrl: true
-  })
-)
+const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || ''))
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
