@@ -51,10 +51,10 @@
           </router-link>
           <button
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
-            :title="theme.isDark ? t('home.switchToLight') : t('home.switchToDark')"
-            @click="theme.toggleDark()"
+            :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
+            @click="toggleTheme"
           >
-            <Icon v-if="theme.isDark" name="sun" size="md" />
+            <Icon v-if="isDark" name="sun" size="md" />
             <Icon v-else name="moon" size="md" />
           </button>
           <router-link

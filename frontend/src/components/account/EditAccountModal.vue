@@ -3412,7 +3412,8 @@ function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol
   editApiProtocol.value = preset.protocol
   editBaseUrl.value = preset.url
 }
-// Bedrock credentialsconst editBedrockAccessKeyId = ref('')
+// Bedrock credentials
+const editBedrockAccessKeyId = ref('')
 const editBedrockSecretAccessKey = ref('')
 const editBedrockSessionToken = ref('')
 const editBedrockRegion = ref('')
