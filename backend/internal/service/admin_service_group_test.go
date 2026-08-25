@@ -23,11 +23,10 @@ type groupRepoStubForAdmin struct {
 	updated                    *Group // 记录 Update 调用的参数
 	getByID                    *Group // GetByID 返回值
 	getErr                     error  // GetByID 返回的错误
+	createID                   int64
+	getByIDByID                map[int64]*Group
 	listActiveByPlatformGroups []Group
 	listActiveByPlatformErr    error
-	createID int64
-
-	getByIDByID map[int64]*Group
 
 	deleteAccountGroupsByGroupIDFn func(groupID int64) (int64, error)
 	bindAccountsToGroupFn          func(groupID int64, accountIDs []int64) error

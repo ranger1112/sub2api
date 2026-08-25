@@ -43,13 +43,11 @@ const (
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformGrok        = domain.PlatformGrok
+	PlatformKiro        = domain.PlatformKiro
 	// 国产 OpenAI 兼容供应商（与 grok 一样经 OpenAI 网关转发）。
-	PlatformKimi     = domain.PlatformKimi
-	PlatformZhipu    = domain.PlatformZhipu
-	PlatformDeepseek = domain.PlatformDeepseek
-	// PlatformKiro is retained for unsupported-platform threshold tests and legacy
-	// account rows. Scheduling-threshold evaluation never pauses kiro accounts.
-	PlatformKiro      = domain.PlatformKiro
+	PlatformKimi      = domain.PlatformKimi
+	PlatformZhipu     = domain.PlatformZhipu
+	PlatformDeepseek  = domain.PlatformDeepseek
 	PlatformComposite = domain.PlatformComposite
 )
 
@@ -264,6 +262,10 @@ const (
 
 	// 面板 API 限流设置（JSON：PanelRateLimitSettings）
 	SettingKeyPanelRateLimitSettings = "panel_rate_limit_settings"
+
+	// OpenAI Capacity 自动临时摘除策略（JSON：OpenAICapacityQuarantineSettings）。
+	// 这是管理员可修改的运行时策略；应用配置仍负责部署级硬上限与 Redis 可用性。
+	SettingKeyOpenAICapacityQuarantineSettings = "openai_capacity_quarantine_settings"
 
 	// 操作审计日志设置
 	SettingKeyAuditLogRetentionDays = "audit_log_retention_days" // 审计日志保留天数（<=0 永久保留），默认 180

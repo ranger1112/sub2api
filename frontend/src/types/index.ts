@@ -1333,11 +1333,10 @@ export interface AccountUsageInfo {
   seven_day: UsageProgress | null
   seven_day_sonnet: UsageProgress | null
   seven_day_fable?: UsageProgress | null
-  thirty_day?: UsageProgress | null
   // 订阅等级(账户类型):Kiro / Antigravity 等
   subscription_tier?: string // 归一化: FREE / PRO / ULTRA / UNKNOWN
   subscription_tier_raw?: string // 上游原始名,如 "KIRO PRO MAX"
-  gemini_shared_daily?: UsageProgress | null
+  thirty_day?: UsageProgress | null  gemini_shared_daily?: UsageProgress | null
   gemini_pro_daily?: UsageProgress | null
   gemini_flash_daily?: UsageProgress | null
   gemini_shared_minute?: UsageProgress | null
@@ -1358,8 +1357,7 @@ export interface AccountUsageInfo {
   grok_local_usage_7d?: WindowStats | null
   grok_local_usage_monthly?: WindowStats | null
   grok_billing?: GrokBillingSummary | null
-  ai_credits?: Array<{
-    credit_type?: string
+  ai_credits?: Array<{    credit_type?: string
     amount?: number
     minimum_balance?: number
   }> | null

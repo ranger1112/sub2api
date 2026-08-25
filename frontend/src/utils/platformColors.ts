@@ -5,8 +5,17 @@
  * instead of defining their own color mappings.
  */
 
-export type Platform = 'anthropic' | 'openai' | 'antigravity' | 'gemini' | 'grok' | 'kiro' | 'kimi' | 'zhipu' | 'deepseek' | 'composite'
-
+export type Platform =
+  | 'anthropic'
+  | 'openai'
+  | 'antigravity'
+  | 'gemini'
+  | 'grok'
+  | 'kiro'
+  | 'kimi'
+  | 'zhipu'
+  | 'deepseek'
+  | 'composite'
 // ── Badge (bg + text + border, for inline badges with border) ───────
 const BADGE: Record<Platform, string> = {
   anthropic: 'bg-orange-500/10 text-orange-600 border-orange-500/30 dark:text-orange-400',

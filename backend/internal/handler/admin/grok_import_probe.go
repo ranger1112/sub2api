@@ -208,6 +208,7 @@ func ProvideAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
+	kiroOAuthService *service.KiroOAuthService,
 	grokQuotaService *service.GrokQuotaService,
 ) *AccountHandler {
 	handler := NewAccountHandler(
@@ -225,8 +226,7 @@ func ProvideAccountHandler(
 		sessionLimitCache,
 		rpmCache,
 		tokenCacheInvalidator,
-		nil, // kiroOAuthService
-	)
+		kiroOAuthService)
 	handler.grokImportProber = grokQuotaService
 	return handler
 }

@@ -477,6 +477,13 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
+	if groupIDs == nil {
+		if planGroupIDs, err := s.defaultOpenAIPlanGroupIDs(ctx, input.Platform, input.Type, input.Credentials); err != nil {
+			return nil, err
+		} else if len(planGroupIDs) > 0 {
+			groupIDs = planGroupIDs
+		}
+	}
 	// 如果没有指定分组,自动绑定对应平台的默认分组
 	if len(groupIDs) == 0 && !input.SkipDefaultGroupBind {
 		defaultGroupName := input.Platform + "-default"
@@ -618,6 +625,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
 		// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
 		account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
+		// Kiro 切到 social 时清理 IdC 专属凭据：client_id/client_secret 仅 IdC 刷新需要，
+		// social 刷新不读；且 client_secret 是敏感键，会被上面的合并从旧值恢复，故这里显式清掉，
+		// 贯彻前端"切 social 清密钥"的意图，避免陈旧 IdC 密钥以密文残留。
+		if account.Platform == PlatformKiro && account.GetCredential("auth_method") == "social" {
+			delete(account.Credentials, "client_secret")
+			delete(account.Credentials, "client_id")
+		}
 		// 校验并规范化请求头覆写配置（header 名小写化、格式检查）
 		if err := NormalizeHeaderOverrideCredentials(account.Credentials); err != nil {
 			return nil, err
@@ -793,6 +807,15 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.AutoPauseOnExpired = *input.AutoPauseOnExpired
 	}
 
+	_, planTypeProvided := input.Credentials["plan_type"]
+	if input.GroupIDs == nil && planTypeProvided {
+		if planGroupIDs, err := s.defaultOpenAIPlanGroupIDs(ctx, account.Platform, account.Type, account.Credentials); err != nil {
+			return nil, err
+		} else if len(planGroupIDs) > 0 {
+			input.GroupIDs = &planGroupIDs
+		}
+	}
+
 	// 先验证分组是否存在（在任何写操作之前）
 	if input.GroupIDs != nil {
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
@@ -867,6 +890,72 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		return nil, err
 	}
 	return updated, nil
+}
+
+func (s *adminServiceImpl) defaultOpenAIPlanGroupIDs(ctx context.Context, platform, accountType string, credentials map[string]any) ([]int64, error) {
+	if platform != PlatformOpenAI || accountType != AccountTypeOAuth {
+		return nil, nil
+	}
+	planType := strings.ToLower(strings.TrimSpace(credentialString(credentials, "plan_type")))
+	if planType != "plus" && planType != "free" {
+		return nil, nil
+	}
+	if s.groupRepo == nil {
+		return nil, errors.New("group repository not configured")
+	}
+	groups, err := s.groupRepo.ListActiveByPlatform(ctx, PlatformOpenAI)
+	if err != nil {
+		return nil, fmt.Errorf("list openai groups: %w", err)
+	}
+
+	groupIDs := make([]int64, 0, len(groups))
+	seen := make(map[int64]struct{}, len(groups))
+	add := func(id int64) {
+		if id <= 0 {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		groupIDs = append(groupIDs, id)
+	}
+	for _, group := range groups {
+		if group.Status != "" && group.Status != StatusActive {
+			continue
+		}
+		switch planType {
+		case "plus":
+			if group.Name == "codex-plus" || group.SubscriptionType == SubscriptionTypeSubscription {
+				add(group.ID)
+			}
+		case "free":
+			if group.Name == "codex-free" {
+				add(group.ID)
+			}
+		}
+	}
+	return groupIDs, nil
+}
+
+func credentialString(credentials map[string]any, key string) string {
+	if credentials == nil {
+		return ""
+	}
+	value, ok := credentials[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键

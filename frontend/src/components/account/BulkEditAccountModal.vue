@@ -68,8 +68,7 @@
             type="button"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              openaiPassthroughEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
+              openaiPassthroughEnabled ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'            ]"
             @click="openaiPassthroughEnabled = !openaiPassthroughEnabled"
           >
             <span
@@ -588,8 +587,7 @@
             type="button"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              interceptWarmupRequests ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
+              interceptWarmupRequests ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'            ]"
             @click="interceptWarmupRequests = !interceptWarmupRequests"
           >
             <span
@@ -630,8 +628,7 @@
             type="button"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              headerOverrideEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
+              headerOverrideEnabled ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'            ]"
             @click="headerOverrideEnabled = !headerOverrideEnabled"
           >
             <span
@@ -915,8 +912,7 @@
             type="button"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              codexCLIOnlyEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
+              codexCLIOnlyEnabled ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'            ]"
             @click="codexCLIOnlyEnabled = !codexCLIOnlyEnabled"
           >
             <span
@@ -959,8 +955,7 @@
             type="button"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              codexCLIOnlyAppServerEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
+              codexCLIOnlyAppServerEnabled ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'            ]"
             @click="codexCLIOnlyAppServerEnabled = !codexCLIOnlyAppServerEnabled"
           >
             <span
@@ -1298,8 +1293,7 @@
               @click="rpmLimitEnabled = !rpmLimitEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                rpmLimitEnabled ? 'bg-green-600' : 'bg-gray-200 dark:bg-dark-600'
-              ]"
+                rpmLimitEnabled ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-dark-600'              ]"
             >
               <span
                 :class="[

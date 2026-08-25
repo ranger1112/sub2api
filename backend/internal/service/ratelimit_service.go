@@ -954,8 +954,9 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	// 国产供应商与 openai 同口径:HTML 403(CDN/代理拦截页)不构成账号失效证据,
 	// 且 403 在 failover 状态集里会被逐账号重放——直接 SetError 会让一个坏请求/
 	// 一层坏代理连环永久禁用整组账号。走 HTML 豁免 + N 次累计 + 临时冷却。
-	// Kiro 复用同一计数逻辑:避免下方非 Antigravity 通用分支「首次 403 即永久禁用」
-	// 误杀只是瞬时 403 的账号(如 token 短暂失效 / 网关抖动)。
+	// handleOpenAI403 的计数逻辑是账号无关的(账号级连续 403 计数 → 临时下线,达阈值才永久禁用),
+	// Kiro 复用它:避免下方非 Antigravity 通用分支「首次 403 即永久禁用」误杀只是瞬时 403 的账号
+	// (如 token 短暂失效 / 网关抖动)。
 	if account.Platform == PlatformOpenAI || account.Platform == PlatformKiro || IsCNProvider(account.Platform) {
 		return s.handleOpenAI403(ctx, account, upstreamMsg, responseBody)
 	}

@@ -1190,6 +1190,8 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if s.isOpenAIAccountRequestRuntimeBlocked(account, requestedModel) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+					} else if decision := s.evaluateOpenAIEffectiveSchedulable(account, "openai.sticky"); s.effectiveSchedulableConfig().Enabled && !decision.Schedulable {
+						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
@@ -1236,6 +1238,8 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		return a
 	}
 	baseCandidateCount := 0
+	effectiveCfg := s.effectiveSchedulableConfig()
+	effectiveWeights := make(map[int64]float64, len(accounts))
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
@@ -1259,10 +1263,26 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			filterStats.exclude("runtime_blocked")
 			continue
 		}
+		if s.IsOpenAICapacityQuarantined(ctx, acc) {
+			filterStats.exclude("capacity_quarantined")
+			continue
+		}
+		effectiveDecision := s.evaluateOpenAIEffectiveSchedulable(acc, "openai.load_aware")
+		if effectiveCfg.Enabled && !effectiveDecision.Schedulable {
+			continue
+		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact) {
 			filterStats.exclude("channel_upstream_restricted")
 			continue
 		}
+		weight := effectiveDecision.WeightMultiplier
+		if !effectiveCfg.Enabled {
+			weight = 1
+		}
+		if weight <= 0 {
+			weight = 1
+		}
+		effectiveWeights[acc.ID] = weight
 		baseCandidateCount++
 		candidates = append(candidates, acc)
 	}
@@ -1292,8 +1312,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			}
 			if loadInfo.LoadRate < 100 {
 				available = append(available, accountWithLoad{
-					account:  acc,
-					loadInfo: loadInfo,
+					account:         acc,
+					loadInfo:        loadInfo,
+					effectiveWeight: effectiveWeights[acc.ID],
 				})
 			}
 		}
@@ -1307,8 +1328,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if a.account.Priority != b.account.Priority {
 				return a.account.Priority < b.account.Priority
 			}
-			if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
-				return a.loadInfo.LoadRate < b.loadInfo.LoadRate
+			aLoadRate := effectiveLoadRate(a.loadInfo.LoadRate, a.effectiveWeight)
+			bLoadRate := effectiveLoadRate(b.loadInfo.LoadRate, b.effectiveWeight)
+			if aLoadRate != bLoadRate {
+				return aLoadRate < bLoadRate
 			}
 			switch {
 			case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
@@ -1536,7 +1559,14 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountBeforeProfit(
 	if s.isOpenAIAccountRequestRuntimeBlocked(fresh, requestedModel) {
 		return nil
 	}
+	if s.IsOpenAICapacityQuarantined(ctx, fresh) {
+		return nil
+	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, fresh) {
+		return nil
+	}
+	effectiveDecision := s.evaluateOpenAIEffectiveSchedulable(fresh, "openai.resolve")
+	if s.effectiveSchedulableConfig().Enabled && !effectiveDecision.Schedulable {
 		return nil
 	}
 	if s.isOpenAIProxyStreamQuarantined(ctx, fresh) {
@@ -1591,6 +1621,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 		if s.isOpenAIProxyStreamQuarantined(ctx, account) {
 			return nil
 		}
+		if s.IsOpenAICapacityQuarantined(ctx, account) {
+			return nil
+		}
 		return account
 	}
 
@@ -1617,6 +1650,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 		return nil
 	}
 	if s.isOpenAIProxyStreamQuarantined(ctx, latest) {
+		return nil
+	}
+	if s.IsOpenAICapacityQuarantined(ctx, latest) {
 		return nil
 	}
 	return latest
@@ -1725,11 +1761,42 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		return s.cfg.Gateway.Scheduling
 	}
 	return config.GatewaySchedulingConfig{
-		StickySessionMaxWaiting:  3,
-		StickySessionWaitTimeout: 45 * time.Second,
-		FallbackWaitTimeout:      30 * time.Second,
-		FallbackMaxWaiting:       100,
-		LoadBatchEnabled:         true,
-		SlotCleanupInterval:      30 * time.Second,
+		StickySessionMaxWaiting:                       3,
+		StickySessionWaitTimeout:                      45 * time.Second,
+		FallbackWaitTimeout:                           30 * time.Second,
+		FallbackMaxWaiting:                            100,
+		LoadBatchEnabled:                              true,
+		EffectiveSchedulableShadowEnabled:             true,
+		EffectiveSchedulableTTFTDegradeThresholdMS:    defaultEffectiveSchedulableTTFTThresholdMS,
+		EffectiveSchedulableErrorRateDegradeThreshold: 0.5,
+		EffectiveSchedulableErrorRateBlockThreshold:   0.95,
+		SlotCleanupInterval:                           30 * time.Second,
 	}
+}
+
+func (s *OpenAIGatewayService) effectiveSchedulableConfig() EffectiveSchedulableConfig {
+	return effectiveSchedulableConfigFromScheduling(s.schedulingConfig())
+}
+
+func (s *OpenAIGatewayService) evaluateOpenAIEffectiveSchedulable(account *Account, scope string) EffectiveSchedulableDecision {
+	cfg := s.effectiveSchedulableConfig()
+	health := EffectiveSchedulableRuntimeHealth{
+		RuntimeBlockedUntil: s.openAIAccountRuntimeBlockUntilValue(account),
+	}
+	if stats := s.ensureOpenAIAccountRuntimeStats(); stats != nil && account != nil {
+		errorRate, ttft, hasTTFT := stats.snapshot(account.ID)
+		health.ErrorRate = errorRate
+		health.HasErrorRate = true
+		health.TTFTMS = ttft
+		health.HasTTFT = hasTTFT
+	}
+	decision := EvaluateEffectiveSchedulable(account, health, time.Now(), cfg)
+	if cfg.ShadowEnabled {
+		accountID := int64(0)
+		if account != nil {
+			accountID = account.ID
+		}
+		logEffectiveSchedulableShadow(scope, accountID, decision, cfg.Enabled)
+	}
+	return decision
 }

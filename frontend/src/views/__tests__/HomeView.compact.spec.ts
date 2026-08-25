@@ -3,7 +3,7 @@ import { mount, RouterLinkStub } from '@vue/test-utils'
 
 import HomeView from '../HomeView.vue'
 
-const { appStore, authStore } = vi.hoisted(() => ({
+const { appStore, authStore, themeStore } = vi.hoisted(() => ({
   appStore: {
     cachedPublicSettings: {} as Record<string, unknown>,
     siteName: 'Fallback site',
@@ -18,11 +18,19 @@ const { appStore, authStore } = vi.hoisted(() => ({
     user: null as { email?: string } | null,
     checkAuth: vi.fn(),
   },
+  themeStore: {
+    isDark: false,
+    toggleDark: vi.fn(),
+  },
 }))
 
 vi.mock('@/stores', () => ({
   useAppStore: () => appStore,
   useAuthStore: () => authStore,
+}))
+
+vi.mock('@/stores/theme', () => ({
+  useThemeStore: () => themeStore,
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -72,6 +80,8 @@ describe('HomeView compact mode', () => {
     authStore.isAdmin = false
     authStore.user = null
     authStore.checkAuth.mockClear()
+    themeStore.isDark = false
+    themeStore.toggleDark.mockClear()
     appStore.fetchPublicSettings.mockClear()
     localStorage.clear()
     vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: false } as MediaQueryList)
@@ -108,7 +118,7 @@ describe('HomeView compact mode', () => {
     const wrapper = mountHome(settings)
 
     expect(wrapper.find('[data-testid="compact-home"]').exists()).toBe(false)
-    expect(wrapper.find('.terminal-container').exists()).toBe(true)
+    expect(wrapper.find('.terminal-glow').exists()).toBe(true)
   })
 
   it('links unauthenticated visitors to login', () => {

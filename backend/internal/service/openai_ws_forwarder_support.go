@@ -690,7 +690,10 @@ func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Contex
 	if !isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
 		return
 	}
-	s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusTooManyRequests, headers, responseBody)
+	stateCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	s.ReportOpenAIAccountScheduleResult(account, "", false, nil)
+	s.rateLimitService.handle429(stateCtx, account, headers, responseBody)
 }
 
 func (s *OpenAIGatewayService) newOpenAIWSRateLimitFailoverError(account *Account, headers http.Header, responseBody []byte, message string) *UpstreamFailoverError {
@@ -723,7 +726,12 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 		return "previous_response_not_found", true
 	}
 	if isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
-		return "upstream_rate_limited", false
+		// Rate-limit error events arrive before any downstream bytes in the non-streaming
+		// WS path. Treat them as fallback-capable so the gateway can fail over to a
+		// different account instead of returning 429 to the client and making the
+		// user/client reconnect manually. The higher-level reconnect classifier still
+		// marks upstream_rate_limited as non-retryable on the same WS account.
+		return "upstream_rate_limited", true
 	}
 	if strings.Contains(msg, "upgrade required") || strings.Contains(msg, "status 426") {
 		return "upgrade_required", true

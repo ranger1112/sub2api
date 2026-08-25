@@ -67,8 +67,7 @@
               <button
                 @click="handleDismiss"
                 data-testid="announcement-popup-dismiss"
-                class="rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-2.5 text-sm font-medium text-white shadow-lg shadow-amber-500/30 transition-all hover:shadow-xl hover:scale-105"
-              >
+                class="rounded-xl bg-primary-500 px-6 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-600 hover:shadow-lg"              >
                 <span class="flex items-center gap-2">
                   <svg v-if="preview" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />

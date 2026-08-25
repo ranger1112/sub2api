@@ -4,13 +4,10 @@ import {
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDES_CREDENTIAL_KEY,
   applyAntigravityProjectID,
-  applyInterceptWarmup,
-  buildKiroCredentials,
-  validateKiroCredentials,
-  type KiroCredentialInputs,
   applyHeaderOverride,
   applyPlanType,
   buildHeaderOverridesObject,
+  buildKiroCredentials,
   buildPlanTypeOptions,
   isCustomGrokBaseUrl,
   isHeaderOverrideCapable,
@@ -20,7 +17,9 @@ import {
   readPlanType,
   serializeHeaderOverrideRows,
   splitHeaderOverridesObject,
-  validateHeaderOverrideRows
+  validateHeaderOverrideRows,
+  validateKiroCredentials,
+  type KiroCredentialInputs
 } from '../credentialsBuilder'
 
 const baseKiroInputs = (): KiroCredentialInputs => ({
@@ -35,6 +34,8 @@ const baseKiroInputs = (): KiroCredentialInputs => ({
   machineId: '',
   clientId: '',
   clientSecret: '',
+  tokenEndpoint: '',
+  scopes: '',
   apiKey: ''
 })
 

@@ -95,8 +95,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
-	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
+	// 仅允许 WS 入站请求走 WS 上游；显式开启 http_ingress_enabled 时允许 HTTP/SSE 复用 WSv2。
+	if !s.openAIWSHTTPIngressEnabled() {
+		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
+	}
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
 	compactPath := isOpenAIResponsesCompactPath(c)
 	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled, compactPath) {
@@ -885,6 +887,26 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			break
 		}
+		if wsErr != nil {
+			if statusCode, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(wsErr); ok &&
+				s.shouldFailoverOpenAIUpstreamResponse(statusCode, "", nil) {
+				if account.IsPoolMode() {
+					s.recordOpenAIWSNonRetryableFastFallback()
+					logOpenAIWSModeInfo(
+						"failover_after_ws_retries account_id=%d attempts=%d status=%d retryable_same_account=%v",
+						account.ID,
+						wsAttempts,
+						statusCode,
+						isPoolModeRetryableStatus(statusCode),
+					)
+					return nil, &UpstreamFailoverError{
+						StatusCode:             statusCode,
+						ResponseBody:           []byte(wsErr.Error()),
+						RetryableOnSameAccount: isPoolModeRetryableStatus(statusCode),
+					}
+				}
+			}
+		}
 		if wsErr == nil {
 			firstTokenMs := int64(0)
 			hasFirstTokenMs := wsResult != nil && wsResult.FirstTokenMs != nil
@@ -1224,6 +1246,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		return forwardResult, nil
 	}
+}
+
+func (s *OpenAIGatewayService) openAIWSHTTPIngressEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.HTTPIngressEnabled
 }
 
 func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {

@@ -170,11 +170,11 @@ func (s *TokenRefreshService) SetPrivacyDeps(factory PrivacyClientFactory, proxy
 	s.proxyRepo = proxyRepo
 }
 
-// SetKiroRefresher 把 Kiro 刷新器注册进后台刷新服务(追加到 registrations)。
+// SetKiroRefresher 把 Kiro 刷新器注册进后台刷新服务。
 // KiroTokenRefresher 同时实现 TokenRefresher 与 OAuthRefreshExecutor。历史上 Kiro 只在请求
 // 热路径按需刷新(token 撞到过期窗口才刷),没有后台主动刷新,也就没有后台对 invalid_grant
 // 的永久禁用;注册后与其它平台一致。必须在 Start() 前调用(wire 阶段),此时后台 goroutine
-// 尚未读取该切片,无数据竞争。
+// 尚未读取注册表,无数据竞争。
 func (s *TokenRefreshService) SetKiroRefresher(r *KiroTokenRefresher) {
 	if r == nil {
 		return

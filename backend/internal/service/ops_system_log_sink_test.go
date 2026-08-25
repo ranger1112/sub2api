@@ -68,8 +68,7 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "access component from fields (real zap path)",
-			event: &logger.LogEvent{
+			name: "access component from fields (real zap path) error request", event: &logger.LogEvent{
 				Level:     "info",
 				Component: "",
 				Fields:    map[string]any{"component": "http.access", "status_code": 500},

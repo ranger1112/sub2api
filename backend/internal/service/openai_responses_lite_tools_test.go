@@ -201,7 +201,7 @@ func TestNormalizeOpenAIResponsesLiteTools_ForcesParallelToolCallsFalse(t *testi
 	}
 }
 
-func TestNormalizeOpenAIResponsesLiteTools_DoesNotAddParallelToolCallsWithoutTools(t *testing.T) {
+func TestNormalizeOpenAIResponsesLiteTools_ForcesParallelToolCallsFalseWithoutTools(t *testing.T) {
 	reqBody := map[string]any{
 		"reasoning":           map[string]any{"context": "all_turns"},
 		"parallel_tool_calls": true,
@@ -210,8 +210,8 @@ func TestNormalizeOpenAIResponsesLiteTools_DoesNotAddParallelToolCallsWithoutToo
 	changed, err := normalizeOpenAIResponsesLiteTools(reqBody)
 
 	require.NoError(t, err)
-	require.False(t, changed)
-	require.Equal(t, true, reqBody["parallel_tool_calls"])
+	require.True(t, changed)
+	require.Equal(t, false, reqBody["parallel_tool_calls"])
 }
 
 func TestNormalizeOpenAIResponsesLiteTools_RejectsNonBooleanParallelToolCalls(t *testing.T) {

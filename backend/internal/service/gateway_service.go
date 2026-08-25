@@ -81,8 +81,9 @@ type forceCacheBillingKeyType struct{}
 
 // accountWithLoad 账号与负载信息的组合，用于负载感知调度
 type accountWithLoad struct {
-	account  *Account
-	loadInfo *AccountLoadInfo
+	account         *Account
+	loadInfo        *AccountLoadInfo
+	effectiveWeight float64
 }
 
 var ForceCacheBillingContextKey = forceCacheBillingKeyType{}

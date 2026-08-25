@@ -687,8 +687,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 createForm.is_exclusive
-                  ? 'bg-green-500'
-                  : 'bg-gray-300 dark:bg-dark-600',
+                  ? 'bg-emerald-500'                  : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
               <span
@@ -2414,8 +2413,7 @@
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 editForm.is_exclusive
-                  ? 'bg-green-500'
-                  : 'bg-gray-300 dark:bg-dark-600',
+                  ? 'bg-emerald-500'                  : 'bg-gray-300 dark:bg-dark-600',
               ]"
             >
               <span

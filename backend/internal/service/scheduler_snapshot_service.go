@@ -821,6 +821,11 @@ func (s *SchedulerSnapshotService) rebuildByAccount(ctx context.Context, account
 		buckets = append(buckets, s.bucketsForPlatform(PlatformAnthropic, groupIDs, seen)...)
 		buckets = append(buckets, s.bucketsForPlatform(PlatformGemini, groupIDs, seen)...)
 	}
+	// Kiro accounts participate in Anthropic mixed scheduling, so their state
+	// changes must also refresh the Anthropic buckets for the affected groups.
+	if account.Platform == PlatformKiro {
+		buckets = append(buckets, s.bucketsForPlatform(PlatformAnthropic, groupIDs, seen)...)
+	}
 	return s.rebuildBuckets(ctx, buckets, reason)
 }
 

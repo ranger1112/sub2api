@@ -4,19 +4,45 @@
 
 > 面向:维护者 / 自动化 agent。这是本仓库约定的**离线发版**流程(区别于 `deploy/DOCKER.md` 里描述的 Docker Hub 拉取方式)。
 
-## 一条命令
+## Windows 全流程一条命令
+
+在 Windows PowerShell 7 中，从仓库根目录执行：
+
+```powershell
+pwsh -File .\release-online.ps1
+```
+
+这个入口用于维护 `feature/online`，会自动完成：
+
+1. 将 `origin` 的 SSH 地址转换为 HTTPS fetch 地址，拉取最新 `main`。
+2. fast-forward 本地 `main`，再合并到 `feature/online`。
+3. 执行后端 server 编译预检、变更包测试、`unit` tag 测试、前端 typecheck 和本次变更的 Vitest。
+4. 通过 Git Bash 调用 `deploy/package_release.sh`。
+5. 验证 merge ancestry、远端 `main` 未继续前进、tar 索引、`docker load`、`linux/amd64`、内嵌版本和 SHA256。
+
+脚本不会执行 Git push、镜像 push 或线上部署，并允许保留仓库既有的未跟踪 `images/`。其他 tracked 改动或 `images/` 之外的未跟踪文件会直接阻止发版。
+
+常用参数：
+
+```powershell
+pwsh -File .\release-online.ps1 -Plan       # 只读预检，不修改 Git、不构建
+pwsh -File .\release-online.ps1 -SkipSync   # 当前 feature/online 提交重新打包
+pwsh -File .\release-online.ps1 -SkipTests  # 明确跳过测试，仍执行构建和制品验证
+```
+
+## 仅构建当前提交
 
 ```bash
 # 在仓库根目录,当前 git 分支/commit 就是要发的版本
 deploy/package_release.sh
 ```
 
-脚本做了什么(见 `deploy/package_release.sh`):
+底层脚本做了什么（见 `deploy/package_release.sh`）：
 
 1. 用根 `Dockerfile` 构建 **release 镜像**(多阶段:前端 `vite build` → `-tags embed` 嵌入 Go 二进制 → alpine 运行时),强制 `--platform linux/amd64`。
 2. 按 `<分支>-<短commit>` 打 tag,例如 `sub2api:feature-online-c07d43ef`,同时打 `sub2api:latest`。
 3. `docker save` 导出到 **`deploy/sub2api-<分支>-<短commit>-linux-amd64.tar`**(命名约定固定)。
-4. 校验 tar 自包含(含镜像索引),打印部署指令。
+4. 校验 tar 自包含，并且同时含有 `index.json` 和 `manifest.json`，然后打印部署指令。
 
 ### 常用变体
 

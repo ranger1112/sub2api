@@ -44,8 +44,13 @@ TARBALL="deploy/sub2api-${BRANCH}-${COMMIT}-linux-amd64.tar"
 SKIP_BUILD=0
 [ "${1:-}" = "--skip-build" ] && SKIP_BUILD=1
 
-# 工作树不干净时告警:镜像 COPY 的是当前工作树(含未提交改动),文件名却只标了 commit。
-if [ -n "$(git status --porcelain)" ]; then
+# 工作树不干净时告警。仓库既有的 images/ 不在 Dockerfile COPY 范围内,可安全忽略。
+TRACKED_DIRTY=0
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  TRACKED_DIRTY=1
+fi
+UNTRACKED_OUTSIDE_IMAGES="$(git ls-files --others --exclude-standard | grep -vE '^images(/|$)' || true)"
+if [ "${TRACKED_DIRTY}" -ne 0 ] || [ -n "${UNTRACKED_OUTSIDE_IMAGES}" ]; then
   echo "⚠️  工作树有未提交改动 —— 打出的镜像会包含它们,但文件名只标了 ${COMMIT}。" >&2
   echo "    发版前建议先提交,保证镜像内容与 ${COMMIT} 一致。" >&2
 fi
@@ -68,11 +73,17 @@ fi
 echo "==> 导出镜像到 ${TARBALL}"
 docker save "${TAG}" -o "${TARBALL}"
 
-# 完整性校验:确认是一个含镜像索引的归档(index.json / manifest.json)。
-if ! tar tf "${TARBALL}" 2>/dev/null | grep -qE '(^|/)(index\.json|manifest\.json)$'; then
-  echo "❌ 导出的 tar 缺少 index.json/manifest.json,可能不完整" >&2
+# 完整性校验:两个 OCI/Docker 索引入口都必须存在。
+TAR_CONTENTS="$(tar tf "${TARBALL}" 2>/dev/null)" || {
+  echo "❌ 无法读取导出的 tar,可能不完整" >&2
   exit 1
-fi
+}
+for REQUIRED_ENTRY in index.json manifest.json; do
+  if ! printf '%s\n' "${TAR_CONTENTS}" | grep -qE "(^|/)${REQUIRED_ENTRY}$"; then
+    echo "❌ 导出的 tar 缺少 ${REQUIRED_ENTRY},可能不完整" >&2
+    exit 1
+  fi
+done
 
 SIZE="$(du -h "${TARBALL}" | cut -f1)"
 echo ""

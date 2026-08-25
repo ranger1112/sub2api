@@ -10,6 +10,54 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetOpenAICapacityQuarantineSettings returns the versioned runtime policy for
+// OpenAI capacity based temporary account isolation.
+// GET /api/v1/admin/settings/openai-capacity-quarantine
+func (h *SettingHandler) GetOpenAICapacityQuarantineSettings(c *gin.Context) {
+	settings, err := h.settingService.GetOpenAICapacityQuarantineSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, settings)
+}
+
+// UpdateOpenAICapacityQuarantineSettings persists the policy using optimistic
+// revision control. A stale revision returns HTTP 409 rather than overwriting
+// another administrator's change.
+// PUT /api/v1/admin/settings/openai-capacity-quarantine
+func (h *SettingHandler) UpdateOpenAICapacityQuarantineSettings(c *gin.Context) {
+	var req service.OpenAICapacityQuarantineSettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	updated, err := h.settingService.SetOpenAICapacityQuarantineSettings(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, updated)
+}
+
+// TestOpenAICapacityQuarantineMatcher evaluates a normalized, already-redacted
+// upstream error against the current policy. It never accepts raw credentials or
+// response bodies, keeping this admin diagnostic endpoint safe for operators.
+// POST /api/v1/admin/settings/openai-capacity-quarantine/test-matcher
+func (h *SettingHandler) TestOpenAICapacityQuarantineMatcher(c *gin.Context) {
+	var req service.OpenAICapacityMatcherInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	settings, err := h.settingService.GetOpenAICapacityQuarantineSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, service.MatchOpenAICapacityError(*settings, req))
+}
+
 // GetAdminAPIKey 获取管理员 API Key 状态
 // GET /api/v1/admin/settings/admin-api-key
 func (h *SettingHandler) GetAdminAPIKey(c *gin.Context) {

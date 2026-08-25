@@ -26,10 +26,10 @@
         <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50">
           <LoadingSpinner size="md" />
         </div>
-        <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
-        <div class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
-          <div class="h-48 w-48 shrink-0">
-            <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
+        <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:text-dark-500">Distribution</p>
+        <h3 class="mb-4 mt-1.5 text-[15px] font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
+        <div class="flex flex-col items-center gap-4 sm:flex-row sm:gap-5">
+          <div class="h-40 w-40 shrink-0">            <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('dashboard.noDataAvailable') }}</div>
           </div>
           <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
@@ -44,13 +44,12 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="model in models" :key="model.model" class="border-t border-gray-100 dark:border-dark-700">
-                  <td class="max-w-[100px] truncate py-1.5 font-medium text-gray-900 dark:text-white" :title="model.model">{{ model.model }}</td>
-                  <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatNumber(model.requests) }}</td>
-                  <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatTokens(model.total_tokens) }}</td>
-                  <td class="py-1.5 text-right text-green-600 dark:text-green-400">${{ formatCost(model.actual_cost) }}</td>
-                  <td class="py-1.5 text-right text-gray-400 dark:text-gray-500">${{ formatCost(model.cost) }}</td>
-                </tr>
+                <tr v-for="model in models" :key="model.model" class="border-t border-gray-100 dark:border-white/[0.07]">
+                  <td class="max-w-[88px] truncate py-1.5 font-medium text-gray-900 dark:text-white" :title="model.model">{{ model.model }}</td>
+                  <td class="py-1.5 text-right tabular-nums text-gray-600 dark:text-dark-300">{{ formatNumber(model.requests) }}</td>
+                  <td class="py-1.5 text-right tabular-nums text-gray-600 dark:text-dark-300">{{ formatTokens(model.total_tokens) }}</td>
+                  <td class="py-1.5 text-right tabular-nums font-medium text-gray-900 dark:text-white">${{ formatCost(model.actual_cost) }}</td>
+                  <td class="py-1.5 text-right tabular-nums text-gray-400 dark:text-dark-500">${{ formatCost(model.cost) }}</td>                </tr>
               </tbody>
             </table>
           </div>
