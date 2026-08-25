@@ -139,7 +139,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
 	}
 	if input.Account != nil && input.Account.Platform == PlatformOpenAI {
-		s.ReportOpenAIAccountScheduleResult(input.Account.ID, input.Account.GetMappedModel(result.Model), true, result.FirstTokenMs)
+		s.ReportOpenAIAccountScheduleResult(input.Account, input.Account.GetMappedModel(result.Model), true, result.FirstTokenMs)
 	}
 
 	apiKey := input.APIKey

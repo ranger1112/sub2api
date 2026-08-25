@@ -692,7 +692,7 @@ func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Contex
 	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
-	s.ReportOpenAIAccountScheduleResult(account.ID, "", false, nil)
+	s.ReportOpenAIAccountScheduleResult(account, "", false, nil)
 	s.rateLimitService.handle429(stateCtx, account, headers, responseBody)
 }
 

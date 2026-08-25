@@ -114,7 +114,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		if len(canonicalModel) > 0 {
 			model = canonicalModel[0]
 		}
-		s.ReportOpenAIAccountScheduleResult(account.ID, model, false, nil)
+		s.ReportOpenAIAccountScheduleResult(account, model, false, nil)
 		// Capacity state is deliberately separate from temp_unschedulable_*.
 		// The matcher itself hard-excludes auth, quota and 429 signals.
 		capacityShouldFailover = s.recordOpenAICapacityUpstreamError(stateCtx, account, statusCode, responseBody, model)
