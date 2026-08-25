@@ -102,9 +102,8 @@ func normalizeOpenAIResponsesLiteTools(reqBody map[string]any) (bool, error) {
 
 func ensureOpenAIResponsesLiteParallelToolCalls(reqBody map[string]any, changed bool) (bool, error) {
 	parallel := reqBody["parallel_tool_calls"]
-	if !openAIResponsesLiteHasTools(reqBody) {
-		return changed, nil
-	}
+	// Upstream OpenAI requires Lite requests to send parallel_tool_calls=false,
+	// including tool-less text requests. Leaving true in place is a 400.
 	if parallel == false {
 		return changed, nil
 	}
