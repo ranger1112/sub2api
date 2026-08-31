@@ -704,6 +704,13 @@ func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Contex
 	if len(responseBody) > 0 {
 		headers = openAIWSSemantic429Headers(account, model, headers)
 	}
+	if account.IsPoolMode() {
+		stateCtx, cancel := openAIAccountStateContext(ctx)
+		defer cancel()
+		s.ReportOpenAIAccountScheduleResult(account, model, false, nil)
+		s.rateLimitService.handle429(stateCtx, account, headers, responseBody)
+		return
+	}
 	s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusTooManyRequests, headers, responseBody, model)
 }
 
