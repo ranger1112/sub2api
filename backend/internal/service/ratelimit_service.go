@@ -1343,6 +1343,11 @@ func (s *RateLimitService) get429FallbackCooldown(ctx context.Context, account *
 		slog.Warn("rate_limit_429_settings_read_failed", "account_id", account.ID, "error", err)
 	}
 
+	// OpenAI OAuth/SetupToken 瞬时 429 走网关短退避，不能套用 Kiro 的 30min 默认冷却。
+	if isOpenAIOAuthAccount(account) {
+		return openAIOAuth429FallbackCooldown, true
+	}
+
 	seconds := defaultRateLimit429CooldownSeconds
 	seconds = clampRateLimit429CooldownSeconds(seconds)
 	return time.Duration(seconds) * time.Second, true
