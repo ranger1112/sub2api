@@ -311,6 +311,10 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireCapacityVetoed {
+			recordOpenAICapacityVeto(failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}

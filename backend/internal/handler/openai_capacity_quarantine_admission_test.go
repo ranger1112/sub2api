@@ -232,7 +232,7 @@ func TestAcquireResponsesAccountSlot_CapacityVetoReleasesSlotAndOwnedSuccessReco
 		release, result := h.acquireResponsesAccountSlot(c, nil, "", capacitySlotSelection(), false, &streamStarted, zap.NewNop())
 		require.Equal(t, openAISlotAcquireOK, result)
 		require.NotNil(t, release)
-		h.reportOpenAIAccountScheduleResult(c, 71, "gpt-5", true, nil)
+		h.reportOpenAIAccountScheduleResult(c, capacitySlotSelection().Account, "gpt-5", true, nil)
 		store.mu.Lock()
 		state := *store.state
 		store.mu.Unlock()

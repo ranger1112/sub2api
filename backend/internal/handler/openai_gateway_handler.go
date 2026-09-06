@@ -750,6 +750,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireCapacityVetoed {
+			recordOpenAICapacityVeto(failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
@@ -1317,6 +1321,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
 			}
+			continue
+		}
+		if slotResult == openAISlotAcquireCapacityVetoed {
+			recordOpenAICapacityVeto(failedAccountIDs, account.ID)
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
@@ -2020,7 +2028,58 @@ const (
 	// 未写任何响应；调用方应经 recordOpenAIProfitVeto 把该账号加入本请求排除集
 	// 后重新选号，全池耗尽由下一轮选号返回标准 no available accounts。
 	openAISlotAcquireProfitVetoed
+	// openAISlotAcquireCapacityVetoed：Capacity 冷却或已有 half-open 探针。
+	// 槽位已释放且未写响应；调用方仅排除该账号并重新选号。
+	openAISlotAcquireCapacityVetoed
 )
+
+const openAICapacityAdmissionCompleteContextKey = "openai_capacity_admission_complete"
+
+// acquireOpenAICapacityAdmission composes the ordinary account slot with the
+// optional Capacity half-open lease. If Capacity rejects, the ordinary slot is
+// released before the caller retries another account.
+func (h *OpenAIGatewayHandler) acquireOpenAICapacityAdmission(c *gin.Context, ctx context.Context, account *service.Account, accountRelease func()) (func(), bool) {
+	capacityRelease, completeSuccess, admitted := h.gatewayService.AcquireOpenAICapacityAdmission(ctx, account)
+	if !admitted {
+		if accountRelease != nil {
+			accountRelease()
+		}
+		return nil, false
+	}
+	if c != nil {
+		c.Set(openAICapacityAdmissionCompleteContextKey, completeSuccess)
+	}
+	return func() {
+		if capacityRelease != nil {
+			capacityRelease()
+		}
+		if accountRelease != nil {
+			accountRelease()
+		}
+	}, true
+}
+
+// reportOpenAIAccountScheduleResult preserves scheduler reporting and closes a
+// Capacity half-open state only through the success callback issued to this
+// concrete admitted request. A late success from another request has no such
+// callback and cannot recover the account.
+func (h *OpenAIGatewayHandler) reportOpenAIAccountScheduleResult(c *gin.Context, account *service.Account, model string, success bool, firstTokenMs *int, observedErr ...error) {
+	h.gatewayService.ReportOpenAIAccountScheduleResult(account, model, success, firstTokenMs, observedErr...)
+	if !success || c == nil {
+		return
+	}
+	if value, ok := c.Get(openAICapacityAdmissionCompleteContextKey); ok {
+		if completeSuccess, ok := value.(func()); ok && completeSuccess != nil {
+			completeSuccess()
+		}
+	}
+}
+
+func recordOpenAICapacityVeto(failedAccountIDs map[int64]struct{}, accountID int64) {
+	if accountID > 0 {
+		failedAccountIDs[accountID] = struct{}{}
+	}
+}
 
 // openAIWSTurnPricing 持有 WebSocket 连接内「当前 turn」的计费定价时刻。
 // 由 BeforeTurn 在每个 turn 开始时冻结，AfterTurn 的用量提交读取它；turn 在
@@ -2138,7 +2197,12 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), openAISlotAcquireOK
+		combinedRelease, admitted := h.acquireOpenAICapacityAdmission(c, ctx, account, selection.ReleaseFunc)
+		if !admitted {
+			reqLog.Debug("openai.account_slot_capacity_vetoed", zap.Int64("account_id", account.ID))
+			return nil, openAISlotAcquireCapacityVetoed
+		}
+		return wrapReleaseOnDone(ctx, combinedRelease), openAISlotAcquireOK
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
@@ -2170,10 +2234,15 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 		}
 		account = latest
 		selection.Account = latest
+		combinedRelease, admitted := h.acquireOpenAICapacityAdmission(c, ctx, account, fastReleaseFunc)
+		if !admitted {
+			reqLog.Debug("openai.account_slot_capacity_vetoed", zap.Int64("account_id", account.ID))
+			return nil, openAISlotAcquireCapacityVetoed
+		}
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return wrapReleaseOnDone(ctx, fastReleaseFunc), openAISlotAcquireOK
+		return wrapReleaseOnDone(ctx, combinedRelease), openAISlotAcquireOK
 	}
 
 	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(ctx, account.ID, selection.WaitPlan.MaxWaiting)
@@ -2226,10 +2295,15 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	}
 	account = latest
 	selection.Account = latest
+	combinedRelease, admitted := h.acquireOpenAICapacityAdmission(c, ctx, account, accountReleaseFunc)
+	if !admitted {
+		reqLog.Debug("openai.account_slot_capacity_vetoed", zap.Int64("account_id", account.ID))
+		return nil, openAISlotAcquireCapacityVetoed
+	}
 	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
-	return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
+	return wrapReleaseOnDone(ctx, combinedRelease), openAISlotAcquireOK
 }
 
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint

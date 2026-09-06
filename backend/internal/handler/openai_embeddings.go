@@ -180,6 +180,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireCapacityVetoed {
+			recordOpenAICapacityVeto(failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
