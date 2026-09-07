@@ -370,8 +370,47 @@ export default {
         kiroOauth: 'OAuth（refresh token）',
         kiroApikey: 'Kiro API Key',
         upstream: '对接上游',
-        upstreamDesc: '通过 Base URL + API Key 连接上游'
+        upstreamDesc: '通过 Base URL + API Key 连接上游',
+        api_key: 'API Key',
+        cookie: 'Cookie'
       },
+      form: {
+        nameLabel: '账号名称',
+        namePlaceholder: '请输入账号名称',
+        platformLabel: '平台',
+        selectPlatform: '选择平台',
+        typeLabel: '类型',
+        selectType: '选择类型',
+        credentialsLabel: '凭证',
+        credentialsPlaceholder: '请输入 Cookie 或 API Key',
+        priorityLabel: '优先级',
+        priorityHint: '数值越小越优先使用',
+        weightLabel: '权重',
+        weightHint: '用于负载均衡的权重值',
+        statusLabel: '状态'
+      },
+      filters: {
+        platform: '平台',
+        allPlatforms: '全部平台',
+        type: '类型',
+        allTypes: '全部类型',
+        status: '状态',
+        allStatuses: '全部状态'
+      },
+      saving: '保存中...',
+      refreshing: '刷新中...',
+      noAccounts: '暂无账号',
+      noAccountsDescription: '添加 AI 平台账号后即可开始使用 API 网关。',
+      accountCreatedSuccess: '账号创建成功',
+      accountUpdatedSuccess: '账号更新成功',
+      accountDeletedSuccess: '账号删除成功',
+      cookieRefreshedSuccess: 'Cookie 刷新成功',
+      testSuccess: '账号测试通过',
+      failedToSave: '保存账号失败',
+      refreshCookie: '刷新 Cookie',
+      testAccount: '测试账号',
+      deleteConfirmMessage: "确定要删除账号 '{name}' 吗？",
+
       antigravityProjectIdLabel: 'GCP Project ID（可选）',
       antigravityProjectIdPlaceholder: 'your-gcp-project-id',
       antigravityProjectIdHint:
