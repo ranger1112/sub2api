@@ -962,7 +962,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		if wsErr != nil {
 			if statusCode, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(wsErr); ok &&
-				s.shouldFailoverOpenAIUpstreamResponse(statusCode, "", nil) {
+				s.shouldFailoverOpenAIUpstreamResponse(account, statusCode, wsErr.Error(), []byte(wsErr.Error())) {
 				if account.IsPoolMode() {
 					s.recordOpenAIWSNonRetryableFastFallback()
 					logOpenAIWSModeInfo(
