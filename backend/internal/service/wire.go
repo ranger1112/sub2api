@@ -276,6 +276,7 @@ func ProvideAccountTestService(
 		kiroQuotaFetcher,
 	)
 	service.agentIdentityWS = openAIGatewayService
+	service.SetOpenAIGatewayService(openAIGatewayService)
 	service.SetSettingService(settingService)
 	service.SetPluginManager(pluginManager)
 	return service
