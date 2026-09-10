@@ -59,6 +59,11 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want: true,
 		},
 		{
+			name:  "access component unsampled fast request",
+			event: &logger.LogEvent{Level: "info", Component: "http.access"},
+			want:  false,
+		},
+		{
 			name: "rejected access excluded from database sink",
 			event: &logger.LogEvent{
 				Level:     "info",
@@ -68,12 +73,22 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "access component from fields (real zap path) error request", event: &logger.LogEvent{
+			name: "access component from fields (real zap path) error request",
+			event: &logger.LogEvent{
 				Level:     "info",
 				Component: "",
 				Fields:    map[string]any{"component": "http.access", "status_code": 500},
 			},
 			want: true,
+		},
+		{
+			name: "access component from fields unsampled fast request",
+			event: &logger.LogEvent{
+				Level:     "info",
+				Component: "",
+				Fields:    map[string]any{"component": "http.access"},
+			},
+			want: false,
 		},
 		{
 			name:  "audit component",
@@ -123,6 +138,28 @@ func TestOpsSystemLogSink_ShouldSampleNormalFastAccess(t *testing.T) {
 	}
 	if got := sink.shouldIndex(event); !got {
 		t.Fatalf("normal fast access request #20 should be indexed by sampling")
+	}
+}
+
+func TestOpsSystemLogSink_ShouldIndexAccessLogsOnlyWhenEnabled(t *testing.T) {
+	sink := &OpsSystemLogSink{}
+	sink.SetPersistAccessLogs(true)
+
+	if !sink.shouldIndex(&logger.LogEvent{Level: "info", Component: "http.access"}) {
+		t.Fatal("access log should be indexed after explicit opt-in")
+	}
+	if !sink.shouldIndex(&logger.LogEvent{
+		Level:  "info",
+		Fields: map[string]any{"component": "http.access"},
+	}) {
+		t.Fatal("field-based access log should be indexed after explicit opt-in")
+	}
+	if sink.shouldIndex(&logger.LogEvent{
+		Level:     "info",
+		Component: "http.access",
+		Fields:    map[string]any{logger.OpsSystemLogSkipField: true},
+	}) {
+		t.Fatal("explicit skip marker must override access-log persistence")
 	}
 }
 

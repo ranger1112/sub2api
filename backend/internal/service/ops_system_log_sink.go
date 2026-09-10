@@ -42,11 +42,12 @@ type OpsSystemLogSink struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	droppedCount    uint64
-	writeFailed     uint64
-	writtenCount    uint64
-	totalDelayNs    uint64
-	accessSampleSeq uint64 // counter for http.access sampling
+	droppedCount      uint64
+	writeFailed       uint64
+	writtenCount      uint64
+	totalDelayNs      uint64
+	accessSampleSeq   uint64 // counter for http.access sampling
+	persistAccessLogs atomic.Bool
 
 	lastError atomic.Value
 }
@@ -148,6 +149,15 @@ func (s *OpsSystemLogSink) WriteLogEvent(event *logger.LogEvent) {
 	}
 }
 
+// SetPersistAccessLogs controls whether high-volume request access logs are
+// copied into PostgreSQL. Warning/error and audit events are always retained.
+func (s *OpsSystemLogSink) SetPersistAccessLogs(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.persistAccessLogs.Store(enabled)
+}
+
 func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 	if event != nil && event.Fields != nil {
 		if skip, _ := event.Fields[logger.OpsSystemLogSkipField].(bool); skip {
@@ -168,7 +178,10 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 		}
 	}
 	if strings.Contains(component, "http.access") {
-		// 错误请求和慢请求全量入库；正常快请求按 1/20 采样。
+		if s.persistAccessLogs.Load() {
+			return true
+		}
+		// 未开启全量落库时：错误请求和慢请求全量入库；正常快请求按 1/20 采样。
 		if event.Fields != nil {
 			if statusCode := asOpsLogInt(event.Fields["status_code"]); statusCode >= 400 {
 				return true

@@ -107,9 +107,16 @@ func (i *PluginPackageInstaller) Install(ctx context.Context, reader io.Reader, 
 	if err != nil {
 		return nil, fmt.Errorf("插件包不是有效的 ZIP: %w", err)
 	}
+	archiveClosed := false
+	closeArchive := func() {
+		if !archiveClosed {
+			archiveClosed = true
+			_ = archive.Close()
+		}
+	}
+	defer closeArchive()
 	manifest, _, signatureStatus, err := i.inspectArchive(&archive.Reader)
 	if err != nil {
-		_ = archive.Close()
 		return nil, err
 	}
 	compatibility := EvaluatePluginCompatibility(manifest, i.hostInfo)
@@ -120,12 +127,10 @@ func (i *PluginPackageInstaller) Install(ctx context.Context, reader io.Reader, 
 
 	installParent := filepath.Join(installedDir, manifest.ID)
 	if err := os.MkdirAll(installParent, 0o700); err != nil {
-		_ = archive.Close()
 		return nil, fmt.Errorf("创建插件安装父目录: %w", err)
 	}
 	extractPath, err := os.MkdirTemp(installParent, ".install-*")
 	if err != nil {
-		_ = archive.Close()
 		return nil, fmt.Errorf("创建插件安装临时目录: %w", err)
 	}
 	installNonce := strings.TrimPrefix(filepath.Base(extractPath), ".install-")
@@ -136,13 +141,11 @@ func (i *PluginPackageInstaller) Install(ctx context.Context, reader io.Reader, 
 			_ = os.RemoveAll(extractPath)
 		}
 	}()
-	extractErr := i.extractArchive(ctx, &archive.Reader, manifest, extractPath)
-	if closeErr := archive.Close(); closeErr != nil && extractErr == nil {
-		extractErr = fmt.Errorf("关闭插件包: %w", closeErr)
+	if err := i.extractArchive(ctx, &archive.Reader, manifest, extractPath); err != nil {
+		return nil, err
 	}
-	if extractErr != nil {
-		return nil, extractErr
-	}
+	// Windows 不允许重命名仍被打开的文件，提交前先释放 ZIP 读取器。
+	closeArchive()
 	if err := os.Rename(extractPath, installPath); err != nil {
 		return nil, fmt.Errorf("提交插件安装目录: %w", err)
 	}
