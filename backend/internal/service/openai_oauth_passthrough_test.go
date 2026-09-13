@@ -2273,7 +2273,7 @@ func TestOpenAIGatewayService_CodexFingerprintCompactDoesNotRewriteBodyCacheKeyO
 	account.Schedulable = true
 	account.Concurrency = 1
 	account.Credentials = map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"}
-	staleIDs := resolveCodexFingerprintIDs(account, "stale-session", codexFingerprintSession)
+	staleIDs := resolveCodexFingerprintIDs(account, codexFingerprintClient{sessionID: "stale-session"}, codexFingerprintSession)
 	require.NotNil(t, staleIDs)
 	stageCodexFingerprintIDs(c, staleIDs)
 

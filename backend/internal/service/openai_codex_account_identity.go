@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -106,9 +107,21 @@ func scopeCodexAccountIdentityValue(account *Account, apiKeyID int64, kind, raw 
 	))
 }
 
+// codexAccountIdentityFields 是参与账号级隔离的 Codex 标识字段。
+//
+// kind 的选取必须保持客户端侧的等式关系，否则隔离本身会制造出 codex-rs
+// 不会产生的组合：
+//   - x-codex-parent-thread-id 与 thread 同 kind——父线程自身发起请求时算出的
+//     scope 值，必须与子线程回带的 parent scope 值逐字节相同；
+//   - x-client-request-id 与 thread 同 kind——codex-rs 里它直接就是 thread_id
+//     （client.rs build_websocket_headers）。
+//
+// structural 标记形如 "{thread_id}:{window_number}" 的结构化值：scope 时必须
+// 保留窗口序号段，只替换线程段，维持 codex-rs 的 window_id 形态。
 var codexAccountIdentityFields = []struct {
-	name string
-	kind string
+	name       string
+	kind       string
+	structural bool
 }{
 	{name: "installation_id", kind: "installation"},
 	{name: "x-codex-installation-id", kind: "installation"},
@@ -116,11 +129,33 @@ var codexAccountIdentityFields = []struct {
 	{name: "session-id", kind: "session"},
 	{name: "thread_id", kind: "thread"},
 	{name: "thread-id", kind: "thread"},
+	// subagent 的父线程标识同时出现在头名形式（client_metadata 顶层）与
+	// 下划线形式（内嵌 turn-metadata JSON）两个载体上，都必须与 thread 同 kind。
+	{name: "parent_thread_id", kind: "thread"},
+	{name: "x-codex-parent-thread-id", kind: "thread"},
 	{name: "turn_id", kind: "turn"},
 	{name: "turn-id", kind: "turn"},
-	{name: "window_id", kind: "window"},
-	{name: "x-codex-window-id", kind: "window"},
-	{name: "x-client-request-id", kind: "request"},
+	{name: "window_id", kind: "window", structural: true},
+	{name: "x-codex-window-id", kind: "window", structural: true},
+	{name: "x-client-request-id", kind: "thread"},
+}
+
+// scopeCodexAccountIdentityStructuralValue 处理 "{thread_id}:{window_number}" 形态的
+// 字段：只 scope 线程段，窗口序号段原样保留。不符合该形态的值整体 scope。
+func scopeCodexAccountIdentityStructuralValue(account *Account, apiKeyID int64, kind, raw string) string {
+	idx := strings.LastIndex(raw, ":")
+	if idx <= 0 || idx == len(raw)-1 {
+		return scopeCodexAccountIdentityValue(account, apiKeyID, kind, raw)
+	}
+	number := raw[idx+1:]
+	if _, err := strconv.ParseUint(number, 10, 64); err != nil {
+		return scopeCodexAccountIdentityValue(account, apiKeyID, kind, raw)
+	}
+	scopedThread := scopeCodexAccountIdentityValue(account, apiKeyID, "thread", raw[:idx])
+	if scopedThread == "" {
+		return raw
+	}
+	return scopedThread + ":" + number
 }
 
 func applyCodexAccountIdentityFields(values map[string]any, account *Account, apiKeyID int64) bool {
@@ -133,7 +168,12 @@ func applyCodexAccountIdentityFields(values map[string]any, account *Account, ap
 		if !ok || strings.TrimSpace(raw) == "" {
 			continue
 		}
-		next := scopeCodexAccountIdentityValue(account, apiKeyID, field.kind, raw)
+		var next string
+		if field.structural {
+			next = scopeCodexAccountIdentityStructuralValue(account, apiKeyID, field.kind, raw)
+		} else {
+			next = scopeCodexAccountIdentityValue(account, apiKeyID, field.kind, raw)
+		}
 		if next != raw {
 			values[field.name] = next
 			changed = true

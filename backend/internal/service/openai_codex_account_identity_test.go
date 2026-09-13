@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -227,4 +228,52 @@ func TestBuildUpstreamRequestNamespacesCodexIdentityByOAuthAccount(t *testing.T)
 		require.NotEqual(t, first.Get(header), second.Get(header), "account failover must rotate upstream identity: %s", header)
 	}
 	require.GreaterOrEqual(t, checked, 5, "test must exercise the real outbound identity surface")
+}
+
+// --- 对齐 codex-rs：window_id 结构保持 + parent 与 thread 同域 ---
+
+// codex-rs 的 window_id 是 "{thread_id}:{window_number}"。账号级隔离只替换线程段、
+// 保留窗口序号段，否则该字段会退化成裸 UUID，丢掉客户端的形态。
+func TestScopeCodexAccountIdentityStructuralValue_PreservesWindowSuffix(t *testing.T) {
+	account := newTestOAuthAccount(7101, map[string]any{codexFingerprintSeedExtraKey: testCodexFingerprintSeed})
+	const threadRaw = "11111111-2222-4333-8444-555555555555"
+
+	scoped := scopeCodexAccountIdentityStructuralValue(account, 77, "window", threadRaw+":3")
+
+	require.NotEqual(t, threadRaw+":3", scoped)
+	require.True(t, strings.HasSuffix(scoped, ":3"), "窗口序号段必须原样保留: %s", scoped)
+	require.Equal(t,
+		scopeCodexAccountIdentityValue(account, 77, "thread", threadRaw),
+		strings.TrimSuffix(scoped, ":3"),
+		"线程段必须与 thread 字段同 kind 隔离")
+
+	// 非结构化值整体 scope。
+	require.Equal(t,
+		scopeCodexAccountIdentityValue(account, 77, "window", "no-suffix"),
+		scopeCodexAccountIdentityStructuralValue(account, 77, "window", "no-suffix"))
+	require.Equal(t,
+		scopeCodexAccountIdentityValue(account, 77, "window", "trailing:"),
+		scopeCodexAccountIdentityStructuralValue(account, 77, "window", "trailing:"))
+}
+
+func TestApplyCodexAccountIdentityFields_ParentAndRequestFollowThreadScope(t *testing.T) {
+	account := newTestOAuthAccount(7102, map[string]any{codexFingerprintSeedExtraKey: testCodexFingerprintSeed})
+	const parentRaw = "11111111-2222-4333-8444-555555555555"
+
+	values := map[string]any{
+		"thread_id":                "child-thread",
+		"x-codex-parent-thread-id": parentRaw,
+		"x-client-request-id":      "child-thread",
+		"x-codex-window-id":        "child-thread:2",
+	}
+	require.True(t, applyCodexAccountIdentityFields(values, account, 77))
+
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", parentRaw), values["x-codex-parent-thread-id"],
+		"parent 必须与 thread 同 kind，才能与父线程自身的隔离值重合")
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", "child-thread"), values["x-client-request-id"],
+		"x-client-request-id 在 codex-rs 里等于 thread_id，隔离后必须仍然相等")
+
+	scopedWindow, ok := values["x-codex-window-id"].(string)
+	require.True(t, ok)
+	require.True(t, strings.HasSuffix(scopedWindow, ":2"), "window_id 必须保留窗口序号: %s", scopedWindow)
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,7 +61,9 @@ func applyStagedCodexFingerprintClientMetadata(c *gin.Context, account *Account,
 // codexFingerprintMode 控制 OAuth 账号出站请求的设备指纹收敛强度。
 // 多人共享同一 OAuth 账号时，每个用户的 Codex 客户端会携带各自不同的
 // installation_id / session_id / thread_id，上游据此判定设备数和会话数。
-// 收敛模式将这些标识改写为账号级恒定值，减少上游可见的设备/会话指纹。
+// 收敛模式将这些标识改写为账号作用域的派生值，减少上游可见的设备/会话指纹。
+// 派生值必须保持 codex-rs 的原生形态与字段间等式（见各 resolveConverged* 的
+// 注释），收敛后的标识集合才始终是真实客户端可能产生的组合。
 type codexFingerprintMode string
 
 const (
@@ -71,10 +74,12 @@ const (
 	// 上游看到 1 台设备 + 多会话（每用户各自的 session）。
 	codexFingerprintDevice codexFingerprintMode = "device"
 	// codexFingerprintSession 收敛 installation_id + session_id，
-	// thread_id 按客户端原始 session-id 确定性派生（每个真实 Codex 会话一个独立线程）。
+	// thread_id 按客户端原始 thread-id 确定性派生（每个真实 Codex 线程一个独立线程），
+	// subagent 回带的 parent_thread_id 走同一派生函数，父子始终落在同一收敛空间。
 	// 上游看到 1 台设备 + 1 会话 + N 线程，最接近正常用户 spawn 子代理的模式。
 	codexFingerprintSession codexFingerprintMode = "session"
-	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id。
+	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id，
+	// 并剥离 parent_thread_id——其唯一原生对应物是根线程，而根线程没有父线程。
 	// 上游看到 1 台设备 + 1 会话 + 1 线程，最激进。
 	codexFingerprintFull codexFingerprintMode = "full"
 )
@@ -239,22 +244,61 @@ func resolveConvergedInstallationID(account *Account, seed string) string {
 	return deriveStableUUIDv4("sub2api:codex-install-id:v2:" + seed)
 }
 
-// resolveConvergedSessionID 返回账号级恒定的 session_id。
+// codexSessionRotationBucket 返回 session_id 的轮换桶（UTC 日）。
+//
+// 真实客户端的 session_id 等于根线程 id，由进程启动时确定——一个真人几周内
+// 会攒下几十上百个 session_id。恒定不变的 session_id 会让上游看到一个
+// 永不结束的会话，这是收敛后残留的生命周期特征。
+//
+// 按天轮换是最轻的无状态折中：调度、限流与 turn-state 溯源用的都是入站原始
+// 标识（见 resolveCodexFingerprintIDsFromRequest 的调用点），不受影响；只有
+// 出站身份里的 WS 粘性键与 prompt_cache_key 默认值会随桶各换一次，等价于
+// 原生客户端的「新会话新连接」。
+func codexSessionRotationBucket(now time.Time) string {
+	return now.UTC().Format("2006-01-02")
+}
+
+// resolveConvergedSessionID 返回账号在当前轮换桶内的 session_id。
 func resolveConvergedSessionID(seed string) string {
+	return resolveConvergedSessionIDAt(seed, time.Now())
+}
+
+// resolveConvergedSessionIDAt 是 resolveConvergedSessionID 的可注入时间版本，
+// 供测试跨越轮换边界而不依赖真实时钟。
+func resolveConvergedSessionIDAt(seed string, now time.Time) string {
 	if seed == "" {
 		return ""
 	}
-	return deriveStableUUIDv4("sub2api:codex-session-id:v2:" + seed)
+	return deriveStableUUIDv4("sub2api:codex-session-id:v3:" + seed + ":" + codexSessionRotationBucket(now))
 }
 
-// resolveConvergedThreadID 按客户端原始 session-id 确定性派生 thread_id。
-// 每个真实 Codex 会话（不同客户端启动实例）获得一个独立线程，
-// 模拟正常用户 spawn 子代理或开多窗口的模式。
-func resolveConvergedThreadID(seed, clientSessionID string) string {
-	if seed == "" || clientSessionID == "" {
+// resolveConvergedThreadID 按客户端原始 thread-id 确定性派生 thread_id。
+// 每个真实 Codex 线程（主线程与各 subagent 线程）获得一个独立线程，
+// 与 codex-rs 的线程模型一致。
+//
+// 派生输入必须是 thread-id 而非 session-id：真实客户端的 thread-id 头恒为
+// 当前线程标识（codex-rs client.rs build_session_headers 的第二个参数），而
+// session-id 头的语义是漂移的——根 agent 填的是 prompt_cache_key（可能是
+// "{source}:{parent_thread_id}"），只有非根 agent 才填真 session_id。用
+// session-id 派生会把父子线程收敛成同一个值，与随请求下发的
+// parent_thread_id 自相矛盾。
+//
+// 前缀 v2→v3 表示派生输入变更：升级后同一客户端线程会得到新的收敛值
+// （一次性重排，installation_id / session_id 不受影响）。
+func resolveConvergedThreadID(seed, clientThreadID string) string {
+	if seed == "" || clientThreadID == "" {
 		return ""
 	}
-	return deriveStableUUIDv4("sub2api:codex-thread-id:v2:" + seed + ":" + clientSessionID)
+	return deriveStableUUIDv4("sub2api:codex-thread-id:v3:" + seed + ":" + clientThreadID)
+}
+
+// resolveConvergedParentThreadID 按同一派生函数映射父线程标识。
+//
+// 必须复用 resolveConvergedThreadID：parent_thread_id 的值就是父线程的
+// thread_id，因此父线程自身发起请求时算出的收敛值与子线程回带的 parent
+// 收敛值必须逐字节相同，否则上游会看到「父线程指向一个不存在的线程」。
+func resolveConvergedParentThreadID(seed, clientParentThreadID string) string {
+	return resolveConvergedThreadID(seed, clientParentThreadID)
 }
 
 // codexFingerprintIDs 收敛后的完整 ID 集合。
@@ -262,24 +306,63 @@ func resolveConvergedThreadID(seed, clientSessionID string) string {
 // 确保所有载体中的 turn_id 等随机字段一致。体改写时还会补记原始
 // client_metadata.session_id，用于识别 root prompt_cache_key 的默认值。
 type codexFingerprintIDs struct {
-	accountID                     int64
-	mode                          codexFingerprintMode
-	installationID                string
-	sessionID                     string
-	threadID                      string
+	accountID      int64
+	mode           codexFingerprintMode
+	installationID string
+	sessionID      string
+	threadID       string
+	parentThreadID string
+	// stripParentThread 表示本次收敛应剥离（而非改写）父线程标识。
+	// full 模式声明「1 设备 1 会话 1 线程」，其唯一原生对应物是根线程，而
+	// codex-rs 里 parent_thread_id 只出现在非根 agent 上——继续携带父线程会
+	// 拼出「唯一的线程却有父线程」这种原生不存在的形态。
+	stripParentThread             bool
 	turnID                        string
 	windowID                      string
+	windowNumber                  uint64
 	turnStartedAtUnixMs           int64
 	originalBodySessionID         string
 	originalBodySessionIDCaptured bool
 }
 
+// codexFingerprintClient 是入站请求自报的原始标识集合，供收敛一次性解析。
+// 与 codexFingerprintIDs（收敛后的出站值）严格区分：本结构只承载客户端原值。
+type codexFingerprintClient struct {
+	// threadID 取 thread-id 头，是当前线程的稳定标识，thread_id 的派生输入。
+	threadID string
+	// sessionID 取 session-id 头，仅在客户端缺失 thread-id 时作为派生回落。
+	sessionID string
+	// parentThreadID 取 x-codex-parent-thread-id 头，subagent 场景下为父线程标识。
+	parentThreadID string
+	// windowNumber 是客户端原始 window_id 的 ":n" 后缀，缺省为 0。
+	windowNumber uint64
+}
+
+// formatCodexWindowID 拼出 codex-rs 形态的 window_id："{thread_id}:{window_number}"。
+// 后缀与随请求下发的 window_number 字段同源（codex-rs session/mod.rs 的
+// current_window 从同一个元组同时产出两者），任何一侧单独硬编码都会让上游
+// 看到真实客户端不可能产生的组合。
+func formatCodexWindowID(threadID string, windowNumber uint64) string {
+	if threadID == "" {
+		return ""
+	}
+	return threadID + ":" + strconv.FormatUint(windowNumber, 10)
+}
+
+// codexThreadDerivationInput 选 thread_id 的派生输入：优先 thread-id 头，
+// 客户端缺失该头时回落到 session-id（v2 之前的历史行为）。
+func codexThreadDerivationInput(client codexFingerprintClient) string {
+	if client.threadID != "" {
+		return client.threadID
+	}
+	return client.sessionID
+}
+
 // resolveCodexFingerprintIDs 按收敛模式计算出站 ID 集合。
-// clientSessionID 是客户端原始的 session-id 头值（连字符形式），用于 session 模式下
-// 的 thread_id 派生——每个真实 Codex 会话得到一个独立线程。
+// client 是客户端自报的原始标识（thread / session / parent / window 序号）。
 // 返回 nil 表示 off 模式，不需要改写。
 // 注意：包含随机生成的 turn_id，调用方必须只调用一次并共享结果给头改写和体改写。
-func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode codexFingerprintMode) *codexFingerprintIDs {
+func resolveCodexFingerprintIDs(account *Account, client codexFingerprintClient, mode codexFingerprintMode) *codexFingerprintIDs {
 	if account == nil || mode == codexFingerprintOff {
 		return nil
 	}
@@ -291,6 +374,7 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 	ids := &codexFingerprintIDs{
 		accountID:           account.ID,
 		mode:                mode,
+		windowNumber:        client.windowNumber,
 		turnStartedAtUnixMs: time.Now().UnixMilli(),
 	}
 
@@ -305,19 +389,23 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 
 	case codexFingerprintSession:
 		ids.sessionID = resolveConvergedSessionID(seed)
-		ids.threadID = resolveConvergedThreadID(seed, clientSessionID)
+		ids.threadID = resolveConvergedThreadID(seed, codexThreadDerivationInput(client))
 		if ids.threadID == "" {
 			ids.threadID = ids.sessionID
 		}
+		ids.parentThreadID = resolveConvergedParentThreadID(seed, client.parentThreadID)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
-		ids.windowID = ids.threadID + ":0"
+		ids.windowID = formatCodexWindowID(ids.threadID, ids.windowNumber)
 		return ids
 
 	case codexFingerprintFull:
 		ids.sessionID = resolveConvergedSessionID(seed)
 		ids.threadID = ids.sessionID
+		// 剥离而非派生：full 模式把所有线程压成一个，上游看到的只能是原生里
+		// 的根线程形态，而 codex-rs 的根线程从不携带 parent_thread_id。
+		ids.stripParentThread = true
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
-		ids.windowID = ids.threadID + ":0"
+		ids.windowID = formatCodexWindowID(ids.threadID, ids.windowNumber)
 		return ids
 	}
 
@@ -334,7 +422,49 @@ func extractClientSessionID(h http.Header) string {
 	return strings.TrimSpace(h.Get("session_id"))
 }
 
-// resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
+// extractClientThreadID 从请求头中提取客户端原始的线程标识。
+// 优先取 thread-id（连字符形式，codex-rs build_session_headers 的标准形态），
+// 回退到 thread_id（下划线形式）。该值尚未被任何隔离层改写，是客户端的真实标识。
+func extractClientThreadID(h http.Header) string {
+	if h == nil {
+		return ""
+	}
+	if v := strings.TrimSpace(h.Get("thread-id")); v != "" {
+		return v
+	}
+	return strings.TrimSpace(h.Get("thread_id"))
+}
+
+// extractClientParentThreadID 提取 subagent 场景下客户端回带的父线程标识。
+// codex-rs 在 x-codex-parent-thread-id 头与 client_metadata 的同名键上同时下发。
+func extractClientParentThreadID(h http.Header) string {
+	if h == nil {
+		return ""
+	}
+	return strings.TrimSpace(h.Get("x-codex-parent-thread-id"))
+}
+
+// extractClientWindowNumber 从客户端原始 window_id 头解析窗口序号。
+// codex-rs 的 window_id 形如 "{thread_id}:{window_number}"，线程标识本身是 UUID
+// （含连字符但不含冒号），故按最后一个冒号切分。解析不出时返回 0——与真实
+// 客户端新建会话时的初值一致。
+func extractClientWindowNumber(h http.Header) uint64 {
+	if h == nil {
+		return 0
+	}
+	raw := strings.TrimSpace(h.Get("x-codex-window-id"))
+	idx := strings.LastIndex(raw, ":")
+	if idx < 0 || idx == len(raw)-1 {
+		return 0
+	}
+	number, err := strconv.ParseUint(raw[idx+1:], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return number
+}
+
+// resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取身份标识，
 // 结合账号配置一次性解析收敛 ID 集合。调用方应将返回的 ids 同时传给
 // applyCodexFingerprintHeaders 和 applyCodexFingerprintClientMetadata。
 func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.Header) *codexFingerprintIDs {
@@ -345,11 +475,16 @@ func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.
 	if mode == codexFingerprintOff {
 		return nil
 	}
-	clientSessionID := ""
+	var client codexFingerprintClient
 	if clientHeaders != nil {
-		clientSessionID = extractClientSessionID(clientHeaders)
+		client = codexFingerprintClient{
+			threadID:       extractClientThreadID(clientHeaders),
+			sessionID:      extractClientSessionID(clientHeaders),
+			parentThreadID: extractClientParentThreadID(clientHeaders),
+			windowNumber:   extractClientWindowNumber(clientHeaders),
+		}
 	}
-	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
+	return resolveCodexFingerprintIDs(account, client, mode)
 }
 
 // applyCodexFingerprintHeaders 按预计算的收敛 ID 改写出站 HTTP 头中的设备指纹。
@@ -376,20 +511,37 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	h.Set("session-id", ids.sessionID)
 	h.Set("session_id", ids.sessionID)
 	h.Set("thread-id", ids.threadID)
+	// 父线程标识：full 模式剥离（其原生对应物是根线程，根线程无父线程）；
+	// session 模式下与 thread_id 落在同一收敛空间，否则上游会看到父线程指向
+	// 一个不存在的线程。只在客户端确实回带时改写，不给非 subagent 请求凭空补。
+	if ids.stripParentThread {
+		h.Del("x-codex-parent-thread-id")
+	} else if ids.parentThreadID != "" && strings.TrimSpace(h.Get("x-codex-parent-thread-id")) != "" {
+		h.Set("x-codex-parent-thread-id", ids.parentThreadID)
+	}
 
-	rewriteCodexTurnMetadataFields(h, map[string]any{
+	fields := map[string]any{
 		"installation_id":         ids.installationID,
 		"session_id":              ids.sessionID,
 		"thread_id":               ids.threadID,
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
+		"window_number":           ids.windowNumber,
 		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-	})
+	}
+	switch {
+	case ids.stripParentThread:
+		fields["parent_thread_id"] = nil // nil 约定为删除该键
+	case ids.parentThreadID != "":
+		fields["parent_thread_id"] = ids.parentThreadID
+	}
+	rewriteCodexTurnMetadataFields(h, fields)
 }
 
 // rewriteCodexTurnMetadataFields 解析 x-codex-turn-metadata 头中的 JSON，
-// 替换指定字段后回写。合法对象保留未指定字段（如 sandbox、thread_source）；
+// 替换或删除指定字段后回写。合法对象保留未指定字段（如 sandbox、thread_source）；
 // 非法/非对象值重建为最小合法 metadata，避免 flat 与 embedded identity 分裂。
+// fields 中 value 为 nil 表示删除该键（full 模式剥离父线程要用）。
 func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 	raw := strings.TrimSpace(h.Get("x-codex-turn-metadata"))
 	if raw == "" {
@@ -400,6 +552,10 @@ func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 		metadata = make(map[string]any, len(fields))
 	}
 	for k, v := range fields {
+		if v == nil {
+			delete(metadata, k)
+			continue
+		}
 		metadata[k] = v
 	}
 	rebuilt, err := json.Marshal(metadata)
@@ -460,15 +616,35 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	existing["thread_id"] = ids.threadID
 	existing["turn_id"] = ids.turnID
 	existing["x-codex-window-id"] = ids.windowID
+	// window_number 与 window_id 的后缀同源，必须一起改写：只改一侧会让上游
+	// 看到 "{thread}:0" 却带 window_number=2 这种真实客户端不会产生的组合。
+	existing["window_number"] = ids.windowNumber
+	// 父线程标识。codex-rs 在 client_metadata 顶层用的键是头名
+	// （x-codex-parent-thread-id），内嵌 turn-metadata JSON 里才是 parent_thread_id。
+	if ids.stripParentThread {
+		delete(existing, "x-codex-parent-thread-id")
+	} else if ids.parentThreadID != "" {
+		if raw, ok := existing["x-codex-parent-thread-id"].(string); ok && strings.TrimSpace(raw) != "" {
+			existing["x-codex-parent-thread-id"] = ids.parentThreadID
+		}
+	}
 
-	rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
+	fields := map[string]any{
 		"installation_id":         ids.installationID,
 		"session_id":              ids.sessionID,
 		"thread_id":               ids.threadID,
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
+		"window_number":           ids.windowNumber,
 		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-	})
+	}
+	switch {
+	case ids.stripParentThread:
+		fields["parent_thread_id"] = nil // nil 约定为删除该键
+	case ids.parentThreadID != "":
+		fields["parent_thread_id"] = ids.parentThreadID
+	}
+	rewriteClientMetadataEmbeddedTurnMetadata(existing, fields)
 	return true
 }
 
@@ -593,6 +769,10 @@ func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fi
 		metadata = make(map[string]any, len(fields))
 	}
 	for k, v := range fields {
+		if v == nil {
+			delete(metadata, k)
+			continue
+		}
 		metadata[k] = v
 	}
 	if rebuilt, err := json.Marshal(metadata); err == nil {
