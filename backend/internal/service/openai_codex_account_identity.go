@@ -133,6 +133,8 @@ var codexAccountIdentityFields = []struct {
 	// 下划线形式（内嵌 turn-metadata JSON）两个载体上，都必须与 thread 同 kind。
 	{name: "parent_thread_id", kind: "thread"},
 	{name: "x-codex-parent-thread-id", kind: "thread"},
+	// fork 来源线程：同样是「指向某个 thread_id」的引用，必须与 thread 同 kind。
+	{name: "forked_from_thread_id", kind: "thread"},
 	{name: "turn_id", kind: "turn"},
 	{name: "turn-id", kind: "turn"},
 	{name: "window_id", kind: "window", structural: true},

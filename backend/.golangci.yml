@@ -23,6 +23,9 @@ linters:
             - "!**/internal/service/ops_alert_evaluator_service.go"
             - "!**/internal/service/ops_cleanup_service.go"
             - "!**/internal/service/ops_metrics_collector.go"
+            # 指纹出站观测的基数指标落在 Redis HyperLogLog（设计契约见该文件顶部），
+            # 与 ops_metrics_collector 同属后台观测面，不参与业务读写路径。
+            - "!**/internal/service/ops_codex_fingerprint_telemetry.go"
             - "!**/internal/service/ops_scheduled_report_service.go"
             - "!**/internal/service/wire.go"
           deny:

@@ -535,6 +535,9 @@ func ProvideOpsMetricsCollector(
 ) *OpsMetricsCollector {
 	collector := NewOpsMetricsCollector(opsRepo, settingRepo, accountRepo, concurrencyService, db, redisClient, cfg)
 	collector.Start()
+	// Codex 指纹出站观测与指标采集同属后台观测面，复用这里的 Redis 句柄装配，
+	// 避免为一条只写基数指标的旁路再造一条 wire 依赖链。worker 常驻到进程退出。
+	NewCodexFingerprintTelemetry(redisClient, CodexFingerprintDefaultLogRate).Start()
 	return collector
 }
 

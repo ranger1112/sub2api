@@ -1134,7 +1134,7 @@ func TestCodexFingerprint_FullModeStripsParentThreadID(t *testing.T) {
 
 	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
 	require.NotNil(t, ids)
-	require.True(t, ids.stripParentThread)
+	require.True(t, ids.stripThreadReferences)
 	require.Empty(t, ids.parentThreadID, "full 模式不派生父线程")
 
 	applyCodexFingerprintHeaders(headers, ids)
@@ -1178,9 +1178,197 @@ func TestCodexFingerprint_SessionModeKeepsDerivedParentThreadID(t *testing.T) {
 
 	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
 	require.NotNil(t, ids)
-	require.False(t, ids.stripParentThread)
+	require.False(t, ids.stripThreadReferences)
 	require.NotEmpty(t, ids.parentThreadID)
 
 	applyCodexFingerprintHeaders(headers, ids)
 	assert.Equal(t, ids.parentThreadID, headers.Get("x-codex-parent-thread-id"))
+}
+
+// --- forked_from_thread_id：只存在于 metadata 载体的线程引用 ---
+//
+// codex-rs 为它只定义了 client_metadata / turn-metadata 键，没有独立 HTTP 头，
+// 因此收敛无法从入站头提取原值，只能在 body 改写时就地派生。
+
+func TestCodexFingerprint_ForkedFromThreadIDLandsInSameSpaceAsThreadID(t *testing.T) {
+	account := newTestOAuthAccount(7010, map[string]any{codexFingerprintModeExtraKey: "session"})
+
+	headers := http.Header{}
+	headers.Set("thread-id", "child-thread")
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"session_id":            "client-session",
+			"forked_from_thread_id": "source-thread",
+			"x-codex-turn-metadata": `{"forked_from_thread_id":"source-thread","sandbox":"seatbelt"}`,
+		},
+	}
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+
+	// 来源线程自身发请求时算出的 thread_id
+	sourceHeaders := http.Header{}
+	sourceHeaders.Set("thread-id", "source-thread")
+	sourceIDs := resolveCodexFingerprintIDsFromRequest(account, sourceHeaders)
+	require.NotNil(t, sourceIDs)
+
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, sourceIDs.threadID, cm["forked_from_thread_id"],
+		"顶层 forked_from_thread_id 必须等于来源线程自身的收敛 thread_id")
+
+	var embedded map[string]any
+	require.NoError(t, json.Unmarshal([]byte(cm["x-codex-turn-metadata"].(string)), &embedded))
+	assert.Equal(t, sourceIDs.threadID, embedded["forked_from_thread_id"],
+		"内嵌 turn-metadata 的 forked_from_thread_id 必须与 thread 同域")
+	assert.Equal(t, "seatbelt", embedded["sandbox"], "无关字段必须保留")
+}
+
+func TestCodexFingerprint_FullModeStripsForkedFromThreadID(t *testing.T) {
+	account := newTestOAuthAccount(7011, map[string]any{codexFingerprintModeExtraKey: "full"})
+
+	headers := http.Header{}
+	headers.Set("thread-id", "child-thread")
+	headers.Set("x-codex-turn-metadata", `{"forked_from_thread_id":"source-thread"}`)
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+	require.True(t, ids.stripThreadReferences)
+
+	applyCodexFingerprintHeaders(headers, ids)
+	var headerMetadata map[string]any
+	require.NoError(t, json.Unmarshal([]byte(headers.Get("x-codex-turn-metadata")), &headerMetadata))
+	_, exists := headerMetadata["forked_from_thread_id"]
+	assert.False(t, exists, "full 模式必须剥离 fork 来源线程（根线程不携带线程引用）")
+
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"forked_from_thread_id": "source-thread",
+			"x-codex-turn-metadata": `{"forked_from_thread_id":"source-thread"}`,
+		},
+	}
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	_, exists = cm["forked_from_thread_id"]
+	assert.False(t, exists, "client_metadata 顶层的引用必须被删除")
+
+	var embedded map[string]any
+	require.NoError(t, json.Unmarshal([]byte(cm["x-codex-turn-metadata"].(string)), &embedded))
+	_, exists = embedded["forked_from_thread_id"]
+	assert.False(t, exists, "内嵌 JSON 的引用必须被删除")
+}
+
+// device 模式不改写线程标识，线程引用自然也不该动。
+func TestCodexFingerprint_DeviceModeLeavesThreadReferencesAlone(t *testing.T) {
+	account := newTestOAuthAccount(7012, map[string]any{codexFingerprintModeExtraKey: "device"})
+
+	headers := http.Header{}
+	headers.Set("thread-id", "child-thread")
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"forked_from_thread_id": "source-thread",
+		},
+	}
+	applyCodexFingerprintClientMetadata(body, ids)
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "source-thread", cm["forked_from_thread_id"],
+		"device 模式不得改写线程引用")
+}
+
+// --- client_metadata 顶层契约锁（2026-09-13 window_number 生产事故回归）---
+//
+// 上游把 client_metadata 顶层当作 map<string,string> 校验：写入原生不存在的键、
+// 或写入非字符串值，都会被直接 400 拒绝。
+
+func TestCodexFingerprint_ClientMetadataTopLevelStaysWithinNativeKeySet(t *testing.T) {
+	for _, mode := range []codexFingerprintMode{codexFingerprintDevice, codexFingerprintSession, codexFingerprintFull} {
+		t.Run(string(mode), func(t *testing.T) {
+			account := newTestOAuthAccount(7020, map[string]any{codexFingerprintModeExtraKey: string(mode)})
+			headers := http.Header{}
+			headers.Set("thread-id", "client-thread")
+			headers.Set("x-codex-window-id", "client-thread:2")
+			ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+			require.NotNil(t, ids)
+
+			body := map[string]any{"client_metadata": map[string]any{}}
+			require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+
+			cm, ok := body["client_metadata"].(map[string]any)
+			require.True(t, ok)
+			require.NotEmpty(t, cm)
+
+			for key, value := range cm {
+				assert.True(t, nativeCodexClientMetadataTopLevelKeys[key],
+					"不得往 client_metadata 顶层注入原生不存在的键 %q", key)
+				_, isString := value.(string)
+				assert.True(t, isString,
+					"client_metadata 顶层的值必须都是字符串，%q 实际是 %T", key, value)
+			}
+		})
+	}
+}
+
+// window_number 只属于内嵌 turn-metadata JSON；顶层出现它会被上游拒绝。
+func TestCodexFingerprint_WindowNumberNeverAppearsInClientMetadataTopLevel(t *testing.T) {
+	account := newTestOAuthAccount(7021, map[string]any{codexFingerprintModeExtraKey: "session"})
+
+	headers := http.Header{}
+	headers.Set("thread-id", "client-thread")
+	headers.Set("x-codex-window-id", "client-thread:7")
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+	require.EqualValues(t, 7, ids.windowNumber)
+
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"session_id":            "client-session",
+			"x-codex-turn-metadata": `{"window_id":"client-thread:7"}`,
+		},
+	}
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	_, exists := cm["window_number"]
+	assert.False(t, exists, "window_number 不得出现在 client_metadata 顶层")
+
+	// 但内嵌 JSON 里必须有，且与 window_id 后缀同源。
+	var embedded map[string]any
+	require.NoError(t, json.Unmarshal([]byte(cm["x-codex-turn-metadata"].(string)), &embedded))
+	assert.EqualValues(t, 7, embedded["window_number"], "内嵌 JSON 的 window_number 必须保留")
+	assert.Equal(t, ids.threadID+":7", embedded["window_id"])
+}
+
+// 透传热路径（raw 字节版）必须与 map 版共享同一份顶层契约。
+func TestCodexFingerprint_RawPathKeepsClientMetadataTopLevelContract(t *testing.T) {
+	account := newTestOAuthAccount(7022, map[string]any{codexFingerprintModeExtraKey: "session"})
+
+	headers := http.Header{}
+	headers.Set("thread-id", "client-thread")
+	headers.Set("x-codex-window-id", "client-thread:5")
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+
+	body := []byte(`{"model":"gpt-5.6-sol","client_metadata":{"session_id":"client-session"},"stream":true}`)
+	out, changed, err := applyCodexFingerprintClientMetadataRaw(body, ids)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(out, &decoded))
+	cm, ok := decoded["client_metadata"].(map[string]any)
+	require.True(t, ok)
+
+	for key, value := range cm {
+		assert.True(t, nativeCodexClientMetadataTopLevelKeys[key],
+			"raw 路径不得往顶层注入原生不存在的键 %q", key)
+		_, isString := value.(string)
+		assert.True(t, isString, "raw 路径顶层的值必须都是字符串，%q 实际是 %T", key, value)
+	}
 }

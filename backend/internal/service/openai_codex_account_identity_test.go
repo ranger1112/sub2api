@@ -277,3 +277,16 @@ func TestApplyCodexAccountIdentityFields_ParentAndRequestFollowThreadScope(t *te
 	require.True(t, ok)
 	require.True(t, strings.HasSuffix(scopedWindow, ":2"), "window_id 必须保留窗口序号: %s", scopedWindow)
 }
+
+// fork 来源线程同样是「指向某个 thread_id」的引用，必须与 thread 同 kind：
+// 来源线程自身请求时算出的隔离值，必须与调用方看到的引用值逐字节相同。
+func TestApplyCodexAccountIdentityFields_ForkedFromFollowsThreadScope(t *testing.T) {
+	account := newTestOAuthAccount(7103, map[string]any{codexFingerprintSeedExtraKey: testCodexFingerprintSeed})
+	const sourceRaw = "11111111-2222-4333-8444-555555555555"
+
+	values := map[string]any{"forked_from_thread_id": sourceRaw}
+	require.True(t, applyCodexAccountIdentityFields(values, account, 77))
+
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", sourceRaw), values["forked_from_thread_id"],
+		"forked_from_thread_id 必须与 thread 同 kind，否则上游会看到指向不存在线程的引用")
+}
