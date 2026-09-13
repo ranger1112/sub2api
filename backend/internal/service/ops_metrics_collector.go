@@ -64,6 +64,10 @@ type OpsMetricsCollector struct {
 
 	skipLogMu sync.Mutex
 	skipLogAt time.Time
+
+	// fingerprintTelemetry 是 Codex 出站指纹的旁路观测。与指标采集共用 Redis，
+	// 随 collector 启停，避免 Provide 里 Start 后丢掉句柄导致无法 Stop / Dropped。
+	fingerprintTelemetry *CodexFingerprintTelemetry
 }
 
 func NewOpsMetricsCollector(
@@ -76,14 +80,15 @@ func NewOpsMetricsCollector(
 	cfg *config.Config,
 ) *OpsMetricsCollector {
 	return &OpsMetricsCollector{
-		opsRepo:            opsRepo,
-		settingRepo:        settingRepo,
-		cfg:                cfg,
-		accountRepo:        accountRepo,
-		concurrencyService: concurrencyService,
-		db:                 db,
-		redisClient:        redisClient,
-		instanceID:         uuid.NewString(),
+		opsRepo:              opsRepo,
+		settingRepo:          settingRepo,
+		cfg:                  cfg,
+		accountRepo:          accountRepo,
+		concurrencyService:   concurrencyService,
+		db:                   db,
+		redisClient:          redisClient,
+		instanceID:           uuid.NewString(),
+		fingerprintTelemetry: NewCodexFingerprintTelemetry(redisClient, CodexFingerprintDefaultLogRate),
 	}
 }
 
@@ -94,6 +99,9 @@ func (c *OpsMetricsCollector) Start() {
 	c.startOnce.Do(func() {
 		if c.stopCh == nil {
 			c.stopCh = make(chan struct{})
+		}
+		if c.fingerprintTelemetry != nil {
+			c.fingerprintTelemetry.Start()
 		}
 		go c.run()
 	})
@@ -106,6 +114,9 @@ func (c *OpsMetricsCollector) Stop() {
 	c.stopOnce.Do(func() {
 		if c.stopCh != nil {
 			close(c.stopCh)
+		}
+		if c.fingerprintTelemetry != nil {
+			c.fingerprintTelemetry.Stop()
 		}
 	})
 }

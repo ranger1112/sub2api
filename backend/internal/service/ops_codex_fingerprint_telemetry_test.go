@@ -125,6 +125,7 @@ func TestResolveCodexFingerprintIDs_RecordsObservationForOffAndConverged(t *test
 	t.Cleanup(func() { SetCodexFingerprintObserver(nil) })
 
 	headers := http.Header{}
+	headers.Set("session-id", "client-session")
 	headers.Set("thread-id", "client-thread")
 	headers.Set("x-codex-installation-id", "client-install")
 	headers.Set("originator", "codex_cli_rs")
@@ -135,7 +136,7 @@ func TestResolveCodexFingerprintIDs_RecordsObservationForOffAndConverged(t *test
 	assert.Equal(t, "off", offObs.Mode)
 	assert.Equal(t, int64(7030), offObs.AccountID)
 	assert.Equal(t, "client-install", offObs.InstallationID, "off 模式必须记录客户端原值")
-	assert.Equal(t, "client-thread", offObs.SessionID, "off 模式记录 thread-id 作为会话标识")
+	assert.Equal(t, "client-session", offObs.SessionID, "off 模式的 sess 桶必须记录 session-id，不能混入 thread-id")
 	assert.Equal(t, "codex_cli_rs", offObs.Originator)
 
 	require.NotNil(t, resolveCodexFingerprintIDsFromRequest(convergedAccount, headers))

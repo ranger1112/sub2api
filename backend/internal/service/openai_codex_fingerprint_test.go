@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 const testCodexFingerprintSeed = "11111111-1111-4111-8111-111111111111"
@@ -593,6 +594,8 @@ func cloneCodexFingerprintIDsForTest(ids *codexFingerprintIDs) *codexFingerprint
 	cloned := *ids
 	cloned.originalBodySessionID = ""
 	cloned.originalBodySessionIDCaptured = false
+	cloned.originalForkedFromThreadID = ""
+	cloned.originalForkedFromThreadIDCaptured = false
 	return &cloned
 }
 
@@ -629,7 +632,8 @@ func TestApplyCodexFingerprintPromptCacheKey_MapRawEquivalence(t *testing.T) {
 			rawCM, _ := rawBody["client_metadata"].(map[string]any)
 			require.Equal(t, ids.sessionID, mapCM["session_id"])
 			require.Equal(t, mapCM["session_id"], rawCM["session_id"])
-			require.Equal(t, "keep", rawCM["trace"])
+			_, hasTrace := rawCM["trace"]
+			require.False(t, hasTrace, "client_metadata 顶层不得保留原生不存在的键")
 		})
 	}
 
@@ -1094,7 +1098,8 @@ func TestCodexFingerprint_ClientMetadataRewritesWindowNumberAndParent(t *testing
 
 	cm, ok := body["client_metadata"].(map[string]any)
 	require.True(t, ok)
-	assert.EqualValues(t, 2, cm["window_number"])
+	_, hasWindowNumber := cm["window_number"]
+	assert.False(t, hasWindowNumber, "window_number 不得出现在 client_metadata 顶层")
 	assert.Equal(t, ids.windowID, cm["x-codex-window-id"])
 	assert.Equal(t, ids.parentThreadID, cm["x-codex-parent-thread-id"])
 
@@ -1189,6 +1194,130 @@ func TestCodexFingerprint_SessionModeKeepsDerivedParentThreadID(t *testing.T) {
 //
 // codex-rs 为它只定义了 client_metadata / turn-metadata 键，没有独立 HTTP 头，
 // 因此收敛无法从入站头提取原值，只能在 body 改写时就地派生。
+
+func TestCodexFingerprint_ForkedFromSurvivesIdentityThenFingerprint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	account := newTestOAuthAccount(7013, map[string]any{codexFingerprintModeExtraKey: "session"})
+	account.Credentials = map[string]any{"chatgpt_account_id": "chatgpt-account-7013"}
+	const sourceRaw = "source-thread"
+
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"session_id":            "client-session",
+			"thread_id":             "child-thread",
+			"forked_from_thread_id": sourceRaw,
+			"x-codex-turn-metadata": `{"forked_from_thread_id":"source-thread","sandbox":"seatbelt"}`,
+		},
+	}
+	stageCodexFingerprintOriginalThreadRefs(c, nil, body["client_metadata"], nil)
+	require.True(t, applyCodexAccountIdentityClientMetadataMap(body, account, 77))
+
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", sourceRaw), cm["forked_from_thread_id"],
+		"identity 层仍必须隔离 forked_from，避免 chat/messages 等无指纹路径漏出原值")
+
+	headers := http.Header{}
+	headers.Set("thread-id", "child-thread")
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+	attachStagedCodexFingerprintOriginalForkedFrom(c, ids)
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+
+	sourceHeaders := http.Header{}
+	sourceHeaders.Set("thread-id", sourceRaw)
+	sourceIDs := resolveCodexFingerprintIDsFromRequest(account, sourceHeaders)
+	require.NotNil(t, sourceIDs)
+
+	cm, ok = body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, sourceIDs.threadID, cm["forked_from_thread_id"],
+		"identity+fingerprint 之后，forked_from 必须等于来源线程自身的出站 thread_id")
+	assert.NotEqual(t, resolveConvergedThreadID(ids.seed, scopeCodexAccountIdentityValue(account, 77, "thread", sourceRaw)), cm["forked_from_thread_id"],
+		"不得对 identity 隔离后再 derive")
+
+	var embedded map[string]any
+	require.NoError(t, json.Unmarshal([]byte(cm["x-codex-turn-metadata"].(string)), &embedded))
+	assert.Equal(t, sourceIDs.threadID, embedded["forked_from_thread_id"])
+}
+
+func TestCodexFingerprint_RawPathUsesStagedOriginalForkedFrom(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	account := newTestOAuthAccount(7014, map[string]any{codexFingerprintModeExtraKey: "session"})
+	account.Credentials = map[string]any{"chatgpt_account_id": "chatgpt-account-7014"}
+	const sourceRaw = "source-thread"
+	body := []byte(`{"client_metadata":{"session_id":"client-session","thread_id":"child-thread","forked_from_thread_id":"source-thread","x-codex-turn-metadata":"{\"forked_from_thread_id\":\"source-thread\",\"sandbox\":\"seatbelt\"}"}}`)
+
+	stageCodexFingerprintOriginalThreadRefs(c, nil, nil, body)
+	scoped, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account, 77)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", sourceRaw), gjson.GetBytes(scoped, "client_metadata.forked_from_thread_id").String())
+
+	headers := http.Header{}
+	headers.Set("thread-id", "child-thread")
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+	attachStagedCodexFingerprintOriginalForkedFrom(c, ids)
+	out, fpChanged, fpErr := applyCodexFingerprintClientMetadataRaw(scoped, ids)
+	require.NoError(t, fpErr)
+	require.True(t, fpChanged)
+
+	sourceHeaders := http.Header{}
+	sourceHeaders.Set("thread-id", sourceRaw)
+	sourceIDs := resolveCodexFingerprintIDsFromRequest(account, sourceHeaders)
+	require.NotNil(t, sourceIDs)
+	require.Equal(t, sourceIDs.threadID, gjson.GetBytes(out, "client_metadata.forked_from_thread_id").String())
+	require.NotEqual(t, resolveConvergedThreadID(ids.seed, scopeCodexAccountIdentityValue(account, 77, "thread", sourceRaw)), gjson.GetBytes(out, "client_metadata.forked_from_thread_id").String())
+
+	embedded := gjson.GetBytes(out, "client_metadata.x-codex-turn-metadata").String()
+	require.Equal(t, sourceIDs.threadID, gjson.Get(embedded, "forked_from_thread_id").String())
+}
+
+func TestCodexFingerprint_StagedOriginalMakesSecondApplyIdempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	account := newTestOAuthAccount(7015, map[string]any{codexFingerprintModeExtraKey: "session"})
+	account.Credentials = map[string]any{"chatgpt_account_id": "chatgpt-account-7015"}
+	const sourceRaw = "source-thread"
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"forked_from_thread_id": sourceRaw,
+		},
+	}
+	stageCodexFingerprintOriginalThreadRefs(c, nil, body["client_metadata"], nil)
+	require.True(t, applyCodexAccountIdentityClientMetadataMap(body, account, 77))
+
+	headers := http.Header{}
+	headers.Set("thread-id", "child-thread")
+	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+	require.NotNil(t, ids)
+	stageCodexFingerprintIDs(c, ids)
+
+	require.True(t, applyStagedCodexFingerprintClientMetadata(c, account, body))
+	first := body["client_metadata"].(map[string]any)["forked_from_thread_id"]
+	require.True(t, applyStagedCodexFingerprintClientMetadata(c, account, body),
+		"HTTP→WS 会对已指纹化的 payload 再跑一遍，必须仍能改写/保持同一份 IDs")
+	second := body["client_metadata"].(map[string]any)["forked_from_thread_id"]
+	assert.Equal(t, first, second)
+
+	sourceHeaders := http.Header{}
+	sourceHeaders.Set("thread-id", sourceRaw)
+	sourceIDs := resolveCodexFingerprintIDsFromRequest(account, sourceHeaders)
+	require.NotNil(t, sourceIDs)
+	assert.Equal(t, sourceIDs.threadID, second)
+}
 
 func TestCodexFingerprint_ForkedFromThreadIDLandsInSameSpaceAsThreadID(t *testing.T) {
 	account := newTestOAuthAccount(7010, map[string]any{codexFingerprintModeExtraKey: "session"})
@@ -1315,6 +1444,31 @@ func TestCodexFingerprint_ClientMetadataTopLevelStaysWithinNativeKeySet(t *testi
 }
 
 // window_number 只属于内嵌 turn-metadata JSON；顶层出现它会被上游拒绝。
+func TestCodexFingerprint_StripsNonNativeClientMetadataTopLevelKeys(t *testing.T) {
+	account := newTestOAuthAccount(7023, map[string]any{codexFingerprintModeExtraKey: "device"})
+	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
+	require.NotNil(t, ids)
+
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"x-codex-installation-id": "original-install",
+			"window_number":           float64(2),
+			"traceparent":             "00-abc-def-01",
+			"session_id":              "keep-session",
+		},
+	}
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	_, hasWindowNumber := cm["window_number"]
+	assert.False(t, hasWindowNumber)
+	_, hasTrace := cm["traceparent"]
+	assert.False(t, hasTrace)
+	assert.Equal(t, ids.installationID, cm["x-codex-installation-id"])
+	assert.Equal(t, "keep-session", cm["session_id"])
+}
+
 func TestCodexFingerprint_WindowNumberNeverAppearsInClientMetadataTopLevel(t *testing.T) {
 	account := newTestOAuthAccount(7021, map[string]any{codexFingerprintModeExtraKey: "session"})
 

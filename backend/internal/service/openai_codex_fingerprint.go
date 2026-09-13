@@ -22,7 +22,10 @@ import (
 // 由 Forward（非透传）或 forwardOpenAIPassthrough（透传）解析后写入，请求
 // 构造器读取用于出站头改写——请求体与出站头必须共享同一份 IDs，保证
 // turn_id 等随机字段一致。
-const codexFingerprintIDsContextKey = "codex_fingerprint_ids"
+const (
+	codexFingerprintIDsContextKey                = "codex_fingerprint_ids"
+	codexFingerprintOriginalForkedFromContextKey = "codex_fingerprint_original_forked_from"
+)
 
 // stageCodexFingerprintIDs 将本 attempt 解析出的收敛 ID 暂存到 gin context。
 // 必须无条件覆写（含 nil）：failover 从收敛账号切到 off 账号时，上一账号的
@@ -52,11 +55,108 @@ func stagedCodexFingerprintIDs(c *gin.Context, account *Account) *codexFingerpri
 // 非透传与透传两个请求构造器共用本函数，防止应用语义漂移。仅解析该
 // snapshot 的 OAuth 账号可读取，避免 stale context 跨账号 failover 泄漏。
 func applyStagedCodexFingerprintHeaders(c *gin.Context, account *Account, h http.Header) {
-	applyCodexFingerprintHeaders(h, stagedCodexFingerprintIDs(c, account))
+	ids := stagedCodexFingerprintIDs(c, account)
+	attachStagedCodexFingerprintOriginalForkedFrom(c, ids)
+	applyCodexFingerprintHeaders(h, ids)
 }
 
 func applyStagedCodexFingerprintClientMetadata(c *gin.Context, account *Account, reqBody map[string]any) bool {
-	return applyCodexFingerprintClientMetadata(reqBody, stagedCodexFingerprintIDs(c, account))
+	ids := stagedCodexFingerprintIDs(c, account)
+	attachStagedCodexFingerprintOriginalForkedFrom(c, ids)
+	return applyCodexFingerprintClientMetadata(reqBody, ids)
+}
+
+// applyAndStageCodexFingerprintClientMetadataRaw 在 identity 改写之后、出站之前
+// 解析收敛 ID、改写 raw body，并写入 gin context 供握手头共用同一份 IDs。
+// WS 入站每帧都会走这里：session/thread/window 由客户端头确定性派生，turn_id
+// 每帧新生成，匹配「一轮一个 turn」的原生形态。
+func applyAndStageCodexFingerprintClientMetadataRaw(c *gin.Context, account *Account, body []byte) ([]byte, error) {
+	stageCodexFingerprintIDs(c, nil)
+	if account == nil || !account.UsesOpenAICodexProtocol() || isOpenAIResponsesCompactPath(c) {
+		return body, nil
+	}
+	var clientHeaders http.Header
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+	fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	attachStagedCodexFingerprintOriginalForkedFrom(c, fpIDs)
+	if fpIDs != nil {
+		fpBody, _, fpErr := applyCodexFingerprintClientMetadataRaw(body, fpIDs)
+		if fpErr != nil {
+			return body, fpErr
+		}
+		body = fpBody
+	}
+	stageCodexFingerprintIDs(c, fpIDs)
+	return body, nil
+}
+
+// stageCodexFingerprintOriginalThreadRefs 在 identity 改写之前记下客户端原始
+// forked_from_thread_id。指纹层没有独立 HTTP 头可取原值，必须靠这次暂存，
+// 否则会从 identity 隔离后的字符串再 derive。
+func stageCodexFingerprintOriginalThreadRefs(c *gin.Context, headers http.Header, clientMetadata any, body []byte) {
+	if c == nil {
+		return
+	}
+	raw := extractCodexForkedFromThreadID(clientMetadata)
+	if raw == "" {
+		raw = extractCodexForkedFromThreadIDFromBody(body)
+	}
+	if raw == "" && headers != nil {
+		raw = strings.TrimSpace(gjson.Get(headers.Get(openAIWSTurnMetadataHeader), "forked_from_thread_id").String())
+	}
+	c.Set(codexFingerprintOriginalForkedFromContextKey, raw)
+}
+
+func attachStagedCodexFingerprintOriginalForkedFrom(c *gin.Context, ids *codexFingerprintIDs) {
+	if ids == nil || ids.originalForkedFromThreadIDCaptured {
+		return
+	}
+	if c == nil {
+		return
+	}
+	value, ok := c.Get(codexFingerprintOriginalForkedFromContextKey)
+	if !ok {
+		return
+	}
+	raw, _ := value.(string)
+	ids.originalForkedFromThreadID = strings.TrimSpace(raw)
+	ids.originalForkedFromThreadIDCaptured = true
+}
+
+func extractCodexForkedFromThreadIDFromBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	if v := strings.TrimSpace(gjson.GetBytes(body, "client_metadata.forked_from_thread_id").String()); v != "" {
+		return v
+	}
+	embedded := gjson.GetBytes(body, "client_metadata.x-codex-turn-metadata")
+	if embedded.Type != gjson.String {
+		return ""
+	}
+	return strings.TrimSpace(gjson.Get(embedded.String(), "forked_from_thread_id").String())
+}
+
+func extractCodexForkedFromThreadID(clientMetadata any) string {
+	switch metadata := clientMetadata.(type) {
+	case map[string]any:
+		if raw, ok := metadata["forked_from_thread_id"].(string); ok {
+			if trimmed := strings.TrimSpace(raw); trimmed != "" {
+				return trimmed
+			}
+		}
+		if raw, ok := metadata["x-codex-turn-metadata"].(string); ok {
+			return strings.TrimSpace(gjson.Get(raw, "forked_from_thread_id").String())
+		}
+	case map[string]string:
+		if trimmed := strings.TrimSpace(metadata["forked_from_thread_id"]); trimmed != "" {
+			return trimmed
+		}
+		return strings.TrimSpace(gjson.Get(metadata["x-codex-turn-metadata"], "forked_from_thread_id").String())
+	}
+	return ""
 }
 
 // codexFingerprintMode 控制 OAuth 账号出站请求的设备指纹收敛强度。
@@ -329,6 +429,11 @@ type codexFingerprintIDs struct {
 	turnStartedAtUnixMs           int64
 	originalBodySessionID         string
 	originalBodySessionIDCaptured bool
+	// originalForkedFromThreadID 是 identity 改写之前的客户端原值。session
+	// 模式必须用这份原值派生，才能与来源线程自身（从原始 thread-id 头派生）
+	// 逐字节重合；identity 之后的隔离值再 derive 会对不上。
+	originalForkedFromThreadID         string
+	originalForkedFromThreadIDCaptured bool
 }
 
 // codexFingerprintClient 是入站请求自报的原始标识集合，供收敛一次性解析。
@@ -521,11 +626,12 @@ func recordCodexFingerprintObservationFromClient(account *Account, mode codexFin
 		obs.SessionID = ids.sessionID
 	} else if clientHeaders != nil {
 		obs.InstallationID = strings.TrimSpace(clientHeaders.Get("x-codex-installation-id"))
-		// 客户端侧 thread-id 才是稳定线程标识（session-id 在根 agent 上是
-		// prompt_cache_key，语义漂移），故优先取它。
-		obs.SessionID = extractClientThreadID(clientHeaders)
+		// sess HLL 的口径是「会话」而不是「线程」。off 模式记录 session-id，
+		// 与 session/full 写入的派生 session_id 同一语义；用 thread-id 会把
+		// 线程基数灌进 sess 桶，和收敛后的 1 会话指标无法对照。
+		obs.SessionID = extractClientSessionID(clientHeaders)
 		if obs.SessionID == "" {
-			obs.SessionID = extractClientSessionID(clientHeaders)
+			obs.SessionID = extractClientThreadID(clientHeaders)
 		}
 	}
 	if clientHeaders != nil {
@@ -621,9 +727,14 @@ func applyCodexThreadReferenceScope(values map[string]any, ids *codexFingerprint
 		if trimmed == "" {
 			continue
 		}
+		input := trimmed
+		if key == "forked_from_thread_id" && ids.originalForkedFromThreadID != "" {
+			input = ids.originalForkedFromThreadID
+		}
 		// 必须复用 thread 派生函数：来源线程自身发起请求时算出的 thread_id，
-		// 与调用方在这里算出的引用值必须逐字节相同。
-		if scoped := resolveConvergedThreadID(ids.seed, trimmed); scoped != "" && scoped != raw {
+		// 与调用方在这里算出的引用值必须逐字节相同。派生输入必须是客户端原值，
+		// 不能是 identity 隔离后的字符串。
+		if scoped := resolveConvergedThreadID(ids.seed, input); scoped != "" && scoped != raw {
 			values[key] = scoped
 			changed = true
 		}
@@ -667,6 +778,7 @@ func applyCodexFingerprintClientMetadata(reqBody map[string]any, ids *codexFinge
 	}
 
 	captureCodexFingerprintOriginalBodySessionID(ids, reqBody["client_metadata"])
+	captureCodexFingerprintOriginalForkedFrom(ids, reqBody["client_metadata"])
 	existing, _ := reqBody["client_metadata"].(map[string]any)
 	if existing == nil {
 		existing = make(map[string]any)
@@ -726,6 +838,9 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 		rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
 			"installation_id": ids.installationID,
 		}, ids)
+		if sanitizeCodexClientMetadataTopLevel(existing) {
+			modified = true
+		}
 		return modified
 	}
 
@@ -766,9 +881,41 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	}
 	// 线程引用字段（forked_from_thread_id）与 thread_id 同域，且只存在于
 	// metadata 载体里——client_metadata 顶层与内嵌 turn-metadata JSON 都要处理。
+	// 派生输入必须是 identity 之前捕获的客户端原值，不能是账号隔离后的字符串。
 	applyCodexThreadReferenceScope(existing, ids)
 	rewriteClientMetadataEmbeddedTurnMetadata(existing, fields, ids)
+	sanitizeCodexClientMetadataTopLevel(existing)
 	return true
+}
+
+// sanitizeCodexClientMetadataTopLevel 把顶层锁成真实 codex-rs 会产出的形态：
+// 只保留原生键与线程引用键，且值必须是字符串。上游把这一层当 map<string,string>
+// 校验，残留的 window_number（整数）或任意未知键都会 400。
+func sanitizeCodexClientMetadataTopLevel(existing map[string]any) bool {
+	if existing == nil {
+		return false
+	}
+	changed := false
+	for key, value := range existing {
+		if _, isString := value.(string); isString && isCodexClientMetadataTopLevelAllowed(key) {
+			continue
+		}
+		delete(existing, key)
+		changed = true
+	}
+	return changed
+}
+
+func isCodexClientMetadataTopLevelAllowed(key string) bool {
+	if nativeCodexClientMetadataTopLevelKeys[key] {
+		return true
+	}
+	for _, ref := range codexThreadReferenceKeys {
+		if key == ref {
+			return true
+		}
+	}
+	return false
 }
 
 func captureCodexFingerprintOriginalBodySessionID(ids *codexFingerprintIDs, clientMetadata any) {
@@ -787,6 +934,14 @@ func captureCodexFingerprintOriginalBodySessionID(ids *codexFingerprintIDs, clie
 	case map[string]string:
 		ids.originalBodySessionID = strings.TrimSpace(metadata["session_id"])
 	}
+}
+
+func captureCodexFingerprintOriginalForkedFrom(ids *codexFingerprintIDs, clientMetadata any) {
+	if ids == nil || ids.originalForkedFromThreadIDCaptured {
+		return
+	}
+	ids.originalForkedFromThreadIDCaptured = true
+	ids.originalForkedFromThreadID = extractCodexForkedFromThreadID(clientMetadata)
 }
 
 func captureCodexFingerprintOriginalBodySessionIDRaw(ids *codexFingerprintIDs, value gjson.Result) {
@@ -849,8 +1004,10 @@ func applyCodexFingerprintClientMetadataRaw(body []byte, ids *codexFingerprintID
 		if err := json.Unmarshal([]byte(cm.Raw), &existing); err != nil {
 			return body, false, fmt.Errorf("decode client_metadata for fingerprint: %w", err)
 		}
+		captureCodexFingerprintOriginalForkedFrom(ids, existing)
 	} else {
 		captureCodexFingerprintOriginalBodySessionIDRaw(ids, gjson.Result{})
+		captureCodexFingerprintOriginalForkedFrom(ids, nil)
 	}
 
 	next := body

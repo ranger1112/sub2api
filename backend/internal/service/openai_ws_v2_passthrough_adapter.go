@@ -761,6 +761,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			firstClientMessage = aliasedBody
 		}
 	}
+	var firstClientHeaders http.Header
+	if c != nil && c.Request != nil {
+		firstClientHeaders = c.Request.Header
+	}
+	stageCodexFingerprintOriginalThreadRefs(c, firstClientHeaders, nil, firstClientMessage)
 	accountScopedFirst, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(firstClientMessage, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	if scopeErr != nil {
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
@@ -768,6 +773,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if accountScoped {
 		firstClientMessage = accountScopedFirst
 	}
+	fpFirst, fpErr := applyAndStageCodexFingerprintClientMetadataRaw(c, account, firstClientMessage)
+	if fpErr != nil {
+		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket fingerprint metadata", fpErr)
+	}
+	firstClientMessage = fpFirst
 	usageMeta := newOpenAIWSPassthroughUsageMeta(initialRequestModel, firstClientMessage)
 	updatedFirst, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, capturedSessionModel, firstClientMessage)
 	if policyErr != nil {
@@ -1015,6 +1025,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				}
 			}
 			if isResponseCreate || eventType == "session.update" {
+				var frameHeaders http.Header
+				if c != nil && c.Request != nil {
+					frameHeaders = c.Request.Header
+				}
+				stageCodexFingerprintOriginalThreadRefs(c, frameHeaders, nil, payload)
 				accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(payload, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 				if scopeErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
@@ -1022,6 +1037,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				if accountScoped {
 					payload = accountScopedPayload
 				}
+				fpPayload, fpErr := applyAndStageCodexFingerprintClientMetadataRaw(c, account, payload)
+				if fpErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket fingerprint metadata", fpErr)
+				}
+				payload = fpPayload
 			}
 			if isResponseCreate {
 				if responsesLite {

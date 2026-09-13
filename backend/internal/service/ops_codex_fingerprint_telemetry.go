@@ -182,6 +182,7 @@ func (t *CodexFingerprintTelemetry) persist(obs codexFingerprintObservation) {
 	addCodexFingerprintHLL(ctx, pipe, "sess", obs.AccountID, bucket, sessionDigest)
 	if _, err := pipe.Exec(ctx); err != nil {
 		// 指标写不进去不影响请求；只记一条低噪日志便于排查 Redis 故障。
+		log.Printf("[CodexFingerprint] persist failed account=%d: %v", obs.AccountID, err)
 		return
 	}
 	t.recorded.Add(1)

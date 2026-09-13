@@ -302,9 +302,14 @@ func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, api
 			continue
 		}
 		raw := strings.TrimSpace(headers.Get(field.name))
-		if raw != "" {
-			headers.Set(field.name, scopeCodexAccountIdentityValue(account, apiKeyID, field.kind, raw))
+		if raw == "" {
+			continue
 		}
+		if field.structural {
+			headers.Set(field.name, scopeCodexAccountIdentityStructuralValue(account, apiKeyID, field.kind, raw))
+			continue
+		}
+		headers.Set(field.name, scopeCodexAccountIdentityValue(account, apiKeyID, field.kind, raw))
 	}
 	if raw := strings.TrimSpace(headers.Get(openAIWSTurnMetadataHeader)); raw != "" {
 		metadata := map[string]any{}

@@ -256,6 +256,26 @@ func TestScopeCodexAccountIdentityStructuralValue_PreservesWindowSuffix(t *testi
 		scopeCodexAccountIdentityStructuralValue(account, 77, "window", "trailing:"))
 }
 
+func TestApplyCodexAccountIdentityHeaders_PreservesWindowSuffix(t *testing.T) {
+	account := newTestOAuthAccount(7104, map[string]any{codexFingerprintSeedExtraKey: testCodexFingerprintSeed})
+	account.Credentials = map[string]any{"chatgpt_account_id": "chatgpt-account-7104"}
+	const threadRaw = "11111111-2222-4333-8444-555555555555"
+
+	headers := http.Header{}
+	headers.Set("thread-id", threadRaw)
+	headers.Set("x-codex-window-id", threadRaw+":3")
+	applyCodexAccountIdentityHeaders(headers, account, 77)
+
+	gotWindow := headers.Get("x-codex-window-id")
+	require.NotEqual(t, threadRaw+":3", gotWindow)
+	require.True(t, strings.HasSuffix(gotWindow, ":3"), "头路径必须保留窗口序号: %s", gotWindow)
+	require.Equal(t, headers.Get("thread-id")+":3", gotWindow,
+		"头路径 window_id 的线程段必须与 thread-id 同域")
+	require.Equal(t,
+		scopeCodexAccountIdentityStructuralValue(account, 77, "window", threadRaw+":3"),
+		gotWindow)
+}
+
 func TestApplyCodexAccountIdentityFields_ParentAndRequestFollowThreadScope(t *testing.T) {
 	account := newTestOAuthAccount(7102, map[string]any{codexFingerprintSeedExtraKey: testCodexFingerprintSeed})
 	const parentRaw = "11111111-2222-4333-8444-555555555555"
@@ -289,4 +309,19 @@ func TestApplyCodexAccountIdentityFields_ForkedFromFollowsThreadScope(t *testing
 
 	require.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", sourceRaw), values["forked_from_thread_id"],
 		"forked_from_thread_id 必须与 thread 同 kind，否则上游会看到指向不存在线程的引用")
+}
+
+func TestApplyCodexAccountIdentityFields_SessionFingerprintStillScopesForkedFrom(t *testing.T) {
+	account := newTestOAuthAccount(7105, map[string]any{codexFingerprintModeExtraKey: "session"})
+	account.Credentials = map[string]any{"chatgpt_account_id": "chatgpt-account-7105"}
+	const sourceRaw = "11111111-2222-4333-8444-555555555555"
+
+	values := map[string]any{
+		"thread_id":             "child-thread",
+		"forked_from_thread_id": sourceRaw,
+	}
+	require.True(t, applyCodexAccountIdentityFields(values, account, 77))
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", sourceRaw), values["forked_from_thread_id"],
+		"session 指纹账号的 identity 层仍必须隔离 forked_from；spark shadow / chat 路径没有指纹 Extra，跳过会漏原值")
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 77, "thread", "child-thread"), values["thread_id"])
 }

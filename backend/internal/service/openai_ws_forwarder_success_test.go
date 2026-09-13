@@ -402,6 +402,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersPreservesCodexIdentity(t *test
 	c.Request.Header.Set("X-Codex-Installation-ID", "installation-ws")
 	c.Request.Header.Set("session-id", "session-ws")
 	c.Request.Header.Set("thread-id", "thread-ws")
+	c.Request.Header.Set("x-codex-parent-thread-id", "parent-thread-ws")
 	c.Request.Header.Set("x-client-request-id", "client-request-ws")
 	c.Request.Header.Set("X-Test", "blocked")
 
@@ -426,6 +427,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersPreservesCodexIdentity(t *test
 	require.Equal(t, "installation-ws", headers.Get("X-Codex-Installation-ID"))
 	require.Equal(t, "session-ws", headers.Get("session-id"))
 	require.Equal(t, "thread-ws", headers.Get("thread-id"))
+	require.Equal(t, "parent-thread-ws", headers.Get("x-codex-parent-thread-id"))
 	require.Equal(t, "client-request-ws", headers.Get("x-client-request-id"))
 	require.Empty(t, headers.Get("X-Test"))
 }
@@ -437,7 +439,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesNamespacedC
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
 	c.Request.Header.Set("X-Codex-Installation-ID", "client-installation")
-	c.Request.Header.Set("X-Codex-Window-ID", "client-window")
+	c.Request.Header.Set("X-Codex-Window-ID", "client-thread:3")
 	c.Request.Header.Set("session-id", "client-session")
 	c.Request.Header.Set("thread-id", "client-thread")
 	c.Request.Header.Set("x-client-request-id", "client-request")
@@ -465,7 +467,9 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesNamespacedC
 	require.NoError(t, err)
 	require.Equal(t, ids.installationID, headers.Get("x-codex-installation-id"))
 	require.NotEqual(t, "client-installation", headers.Get("x-codex-installation-id"))
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "window", "client-window"), headers.Get("x-codex-window-id"))
+	require.Equal(t, scopeCodexAccountIdentityStructuralValue(account, 0, "window", "client-thread:3"), headers.Get("x-codex-window-id"))
+	require.True(t, strings.HasSuffix(headers.Get("x-codex-window-id"), ":3"),
+		"device 模式头路径必须保留 window 序号: %s", headers.Get("x-codex-window-id"))
 	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "session", "client-session"), headers.Get("session-id"))
 	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "thread", "client-thread"), headers.Get("thread-id"))
 	// x-client-request-id 在 codex-rs 里就是 thread_id（client.rs
