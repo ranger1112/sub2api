@@ -104,6 +104,31 @@ func TestLockAndMergeAccountProbeExtraUsesCurrentDatabaseSnapshot(t *testing.T) 
 	}
 }
 
+func TestLockAndMergeAccountProbeExtraSelectMatchesScanContract(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	// Keep this expectation adjacent to the OpenCode identity expression so a
+	// duplicate Ollama snapshot column cannot silently reintroduce the Scan bug.
+	mock.ExpectQuery(`(?s)extra -> 'ollama_cloud_usage_auto_refresh',\s+extra -> 'ollama_cloud_usage_snapshot',\s+COALESCE\(`).
+		WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot", "current_extra"}).
+			AddRow(true, false, true, nil, nil, nil, nil, nil, nil, false, nil, nil, nil))
+
+	account := &service.Account{
+		ID:          27,
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"},
+	}
+	_, err = lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func probeBoolPtr(value bool) *bool {
 	return &value
 }

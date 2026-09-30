@@ -654,7 +654,6 @@ func lockAndMergeAccountProbeExtra(
 			extra -> 'ollama_cloud_usage_session',
 			extra -> 'ollama_cloud_usage_auto_refresh',
 			extra -> 'ollama_cloud_usage_snapshot',
-			extra -> 'ollama_cloud_usage_snapshot',
 			COALESCE(
 				(
 					-- opencode_go 平台分支：新旧都是 opencode_go Go 订阅（account_mode
