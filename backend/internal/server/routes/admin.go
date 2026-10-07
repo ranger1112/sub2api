@@ -73,9 +73,6 @@ func RegisterAdminRoutes(
 		// 优惠码管理
 		registerPromoCodeRoutes(admin, h)
 
-		// 每日签到管理（配置、分析、奖励分层）
-		registerCheckInRoutes(admin, h)
-
 		// 系统设置
 		registerSettingsRoutes(admin, h)
 
@@ -371,6 +368,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.PUT("/opencode-go-usage/settings", h.Admin.Account.UpdateOpenCodeGoUsageSettings)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.GET("/:id/claude/reset-credits", h.Admin.Account.ClaudeResetCredits)
+		// Same protection as the Codex reset-quota route (admin auth, audit, compliance guard).
+		accounts.POST("/:id/claude/reset-credits/redeem", h.Admin.Account.RedeemClaudeResetCredit)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
@@ -565,20 +564,6 @@ func registerPromoCodeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerCheckInRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
-	checkin := admin.Group("/checkin")
-	{
-		checkin.GET("/config", h.Admin.CheckIn.GetConfig)
-		checkin.PUT("/config", h.Admin.CheckIn.UpdateConfig)
-		checkin.GET("/analytics", h.Admin.CheckIn.GetAnalytics)
-		checkin.GET("/records", h.Admin.CheckIn.ListRecords)
-		checkin.GET("/tiers", h.Admin.CheckIn.ListTiers)
-		checkin.POST("/tiers", h.Admin.CheckIn.CreateTier)
-		checkin.PUT("/tiers/:id", h.Admin.CheckIn.UpdateTier)
-		checkin.DELETE("/tiers/:id", h.Admin.CheckIn.DeleteTier)
-	}
-}
-
 func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	adminSettings := admin.Group("/settings")
 	{
@@ -598,10 +583,6 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 529过载冷却配置
 		adminSettings.GET("/overload-cooldown", h.Admin.Setting.GetOverloadCooldownSettings)
 		adminSettings.PUT("/overload-cooldown", h.Admin.Setting.UpdateOverloadCooldownSettings)
-		// OpenAI Capacity 自动临时摘除策略
-		adminSettings.GET("/openai-capacity-quarantine", h.Admin.Setting.GetOpenAICapacityQuarantineSettings)
-		adminSettings.PUT("/openai-capacity-quarantine", h.Admin.Setting.UpdateOpenAICapacityQuarantineSettings)
-		adminSettings.POST("/openai-capacity-quarantine/test-matcher", h.Admin.Setting.TestOpenAICapacityQuarantineMatcher)
 		// 429默认回避配置
 		adminSettings.GET("/rate-limit-429-cooldown", h.Admin.Setting.GetRateLimit429CooldownSettings)
 		adminSettings.PUT("/rate-limit-429-cooldown", h.Admin.Setting.UpdateRateLimit429CooldownSettings)

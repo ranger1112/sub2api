@@ -84,8 +84,22 @@ func newKeyBillingRouteTestRouter(runMode string) (*gin.Engine, *keyBillingRoute
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	gatewayHandler := handler.NewGatewayHandler(
-		gatewayService, openAIGatewayService, nil, nil, nil, nil, nil, nil, nil,
-		apiKeyService, nil, nil, nil, nil, cfg, nil,
+		gatewayService,
+		openAIGatewayService,
+		nil, // geminiCompatService
+		nil, // antigravityGatewayService
+		nil, // userService
+		nil, // concurrencyService
+		nil, // billingCacheService
+		nil, // usageService
+		apiKeyService,
+		nil, // usageRecordWorkerPool
+		nil, // errorPassthroughService
+		nil, // contentModerationService
+		nil, // userMsgQueueService
+		cfg,
+		nil, // settingService
+		nil, // optional Kiro gateway service
 	)
 
 	router := gin.New()
