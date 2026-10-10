@@ -6,7 +6,7 @@
  * request/error/token counts in user-facing surfaces.
  */
 
-import type { HealthScoreBand, HealthState, MonitorHealth } from '@/api/channelMonitorV2'
+import type { HealthScoreBand, HealthState, MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 import { formatCompactNumber } from '@/utils/format'
 
 export function monitorIntlLocale(): string {
@@ -112,22 +112,75 @@ export function healthScoreClass(
   health: MonitorHealth,
   mode: HealthDisplayMode,
   requestCount: number,
+  metric?: MonitorMetric,
 ): string {
   const score = healthModeScore(health, mode)
   // Sync-only traffic has no first-token samples. Never paint TTFT as red/empty-fail.
-  if (mode === 'ttft' && score == null) return 'health-unknown'
+  if (mode === 'ttft' && score == null && metric?.ttft?.p50_ms == null) return 'health-unknown'
   if (score == null) {
-    if (requestCount <= 0) return 'health-unknown'
-    // Fall back to coarse state when score is absent (older payloads).
+    // A public response may redact request_count, and a short bucket may be
+    // below the server's minimum scoring sample. Preserve a visible status for
+    // buckets that still carry metrics instead of turning all traffic gray.
     const coarse =
       mode === 'success'
         ? health.error_rate
         : mode === 'cache'
           ? health.cache
-          : health.overall
-    return healthStateClass(coarse)
+          : mode === 'ttft'
+            ? health.ttft
+            : health.overall
+    if (coarse !== 'unknown') return healthStateClass(coarse)
+    if (requestCount <= 0 && !hasMonitorTraffic(metric)) return 'health-unknown'
+    return provisionalHealthClass(health, mode, metric)
   }
   return `health-${scoreToBand(score)}`
+}
+
+function hasMonitorTraffic(metric?: MonitorMetric): boolean {
+  if (!metric) return false
+  return Boolean(
+    metric.request_count > 0 ||
+      metric.rpm > 0 ||
+      metric.tpm > 0 ||
+      metric.error_rate > 0 ||
+      metric.ttft.p50_ms != null ||
+      metric.duration.p50_ms != null,
+  )
+}
+
+/** Coarse fallback for low-volume buckets whose exact score is unavailable. */
+function provisionalHealthClass(
+  health: MonitorHealth,
+  mode: HealthDisplayMode,
+  metric?: MonitorMetric,
+): string {
+  if (!metric) return 'health-unknown'
+  const thresholds = health.thresholds
+  if (mode === 'success') {
+    const errorRate = metric.error_rate || 0
+    if (errorRate >= (thresholds?.critical_error_rate ?? 0.05)) return 'health-critical'
+    if (errorRate >= (thresholds?.warning_error_rate ?? 0.02)) return 'health-warning'
+    return 'health-healthy'
+  }
+  if (mode === 'cache') {
+    const cacheRate = metric.cache_rate || 0
+    if (cacheRate < (thresholds?.critical_cache_rate ?? 0.05)) return 'health-critical'
+    if (cacheRate < (thresholds?.warning_cache_rate ?? 0.2)) return 'health-warning'
+    return 'health-healthy'
+  }
+  if (mode === 'ttft') {
+    const p50 = metric.ttft.p50_ms
+    if (p50 == null) return 'health-unknown'
+    if (p50 >= (thresholds?.critical_ttft_ms ?? 6000)) return 'health-critical'
+    if (p50 >= (thresholds?.warning_ttft_ms ?? 4000)) return 'health-warning'
+    return 'health-healthy'
+  }
+  // Overall fallback follows the server's coarse health inputs. Error rate is
+  // the safest signal when a bucket is too small for a weighted score.
+  const errorRate = metric.error_rate || 0
+  if (errorRate >= (thresholds?.critical_error_rate ?? 0.05)) return 'health-critical'
+  if (errorRate >= (thresholds?.warning_error_rate ?? 0.02)) return 'health-warning'
+  return 'health-healthy'
 }
 
 /** Missing first-token samples are "not applicable", not a failed latency budget. */

@@ -57,7 +57,7 @@
             :class="showThroughput ? 'matrix-row--with-tps' : ''"
           >
             <div class="dimension-cell flex min-w-0 items-center gap-2 bg-white dark:bg-dark-800" :title="rowLabel(entry.row)">
-              <span :class="['status-dot', cellClass(entry.row.health, entry.row.metrics.request_count)]"></span>
+              <span :class="['status-dot', cellClass(entry.row.health, entry.row.metrics.request_count, entry.row.metrics)]"></span>
               <strong class="truncate text-xs font-semibold text-gray-800 dark:text-gray-100">{{ rowLabel(entry.row) }}</strong>
             </div>
             <strong class="summary-value bg-white text-xs font-medium tabular-nums text-gray-600 dark:bg-dark-800 dark:text-gray-300">
@@ -87,7 +87,7 @@
                 :key="slot.start"
                 class="pulse-cell relative rounded-sm border-0 p-0 outline-offset-1"
                 :class="[
-                  slot.bucket ? cellClass(slot.bucket.health, slot.bucket.metrics.request_count) : 'health-unknown',
+                  slot.bucket ? cellClass(slot.bucket.health, slot.bucket.metrics.request_count, slot.bucket.metrics) : 'health-unknown',
                   slot.bucket ? 'has-data' : 'is-empty',
                 ]"
                 tabindex="0"
@@ -343,8 +343,8 @@ watch(
   },
 )
 
-function cellClass(health: MonitorHealth, requestCount: number): string {
-  return healthScoreClass(health, props.healthMode, requestCount)
+function cellClass(health: MonitorHealth, requestCount: number, metric?: MonitorMetric): string {
+  return healthScoreClass(health, props.healthMode, requestCount, metric)
 }
 
 function rowLabel(row: MonitorMatrixRow): string {

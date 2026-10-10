@@ -16,7 +16,7 @@ import {
   tokensPerSecondFromTpm,
   ttftDisplayState,
 } from '../monitorFormat'
-import type { MonitorHealth } from '@/api/channelMonitorV2'
+import type { MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 
 describe('monitorFormat accuracy', () => {
   it('converts backend TPM (per minute) to tokens/sec for display', () => {
@@ -104,7 +104,37 @@ describe('monitorFormat accuracy', () => {
     expect(healthScoreClass(health, 'cache', 10)).toBe('health-score5')
     // Redacted user payloads have request_count=0 but keep score fields.
     expect(healthScoreClass(health, 'overall', 0)).toBe('health-score5')
-    expect(healthScoreClass({ ...health, score: null }, 'overall', 0)).toBe('health-unknown')
+    expect(healthScoreClass({ ...health, score: null }, 'overall', 0)).toBe('health-warning')
+
+    const redactedLowVolumeMetric = {
+      request_count: 0,
+      rpm: 1.2,
+      tpm: 0,
+      error_rate: 0,
+      ttft: { p50_ms: 800, p90_ms: 1200, p95_ms: 1400, avg_ms: 900 },
+      duration: { p50_ms: 1000, p90_ms: 1400, p95_ms: 1600, avg_ms: 1100 },
+    } as MonitorMetric
+    const unknownHealth: MonitorHealth = {
+      overall: 'unknown',
+      error_rate: 'unknown',
+      ttft: 'unknown',
+      cache: 'unknown',
+      score: null,
+      minimum_sample: 20,
+      thresholds: {
+        warning_error_rate: 0.02,
+        critical_error_rate: 0.05,
+        target_ttft_ms: 2500,
+        warning_ttft_ms: 4000,
+        critical_ttft_ms: 6000,
+        warning_cache_rate: 0.2,
+        critical_cache_rate: 0.05,
+        error_weight: 0.5,
+        ttft_weight: 0.3,
+        cache_weight: 0.2,
+      },
+    }
+    expect(healthScoreClass(unknownHealth, 'overall', 0, redactedLowVolumeMetric)).toBe('health-healthy')
   })
 
   it('maps health states for status dots', () => {
