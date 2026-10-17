@@ -220,10 +220,12 @@ function Invoke-ReleaseTests {
             }
 
             $changedFrontendTests = @($ChangedFiles | Where-Object {
-                $_.StartsWith('frontend/') -and ($_ -match '\.(spec|test)\.[cm]?[jt]sx?$')
+                $_.StartsWith('frontend/') -and
+                ($_ -match '\.(spec|test)\.[cm]?[jt]sx?$') -and
+                (Test-Path -LiteralPath (Join-Path $repoRoot $_) -PathType Leaf)
             } | ForEach-Object { $_.Substring('frontend/'.Length) })
             if ($changedFrontendTests.Count -gt 0) {
-                & pnpm test:run -- @changedFrontendTests
+                & pnpm exec vitest run @changedFrontendTests
                 if ($LASTEXITCODE -ne 0) {
                     throw "Frontend changed tests failed with exit code $LASTEXITCODE."
                 }
