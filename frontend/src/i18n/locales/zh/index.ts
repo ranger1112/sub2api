@@ -1,3 +1,4 @@
+import adminAccessKeys from './adminAccessKeys'
 import landing from './landing'
 import common from './common'
 import checkin from './checkin'
@@ -8,6 +9,7 @@ import admin from './admin'
 import misc from './misc'
 
 export default {
+  adminAccessKeys,
   ...landing,
   ...common,
   ...checkin,

@@ -137,6 +137,7 @@ vite.config.js
 docs/*
 !docs/OpenAI-Capacity-账号自动临时摘除实施方案.md
 !docs/ANTIGRAVITY_ATTRIBUTION_429.md
+!docs/admin-api-keys.md
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
