@@ -20,6 +20,7 @@ param(
     [string]$FeatureBranch = 'feature/online',
     [string]$RemoteUrl,
     [string]$GitBash = 'C:\Program Files\Git\bin\bash.exe',
+    [string]$WindowsTar = "$env:SystemRoot\System32\tar.exe",
     [switch]$Plan,
     [switch]$SkipSync,
     [switch]$SkipTests
@@ -98,10 +99,13 @@ function Get-Lines {
 }
 
 function Assert-RequiredTools {
-    foreach ($command in @('git', 'docker', 'go', 'pnpm', 'tar')) {
+    foreach ($command in @('git', 'docker', 'go', 'pnpm')) {
         if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
             throw "Required command is not available: $command"
         }
+    }
+    if (-not (Test-Path -LiteralPath $WindowsTar -PathType Leaf)) {
+        throw "Windows tar was not found at: $WindowsTar"
     }
     if (-not (Test-Path -LiteralPath $GitBash -PathType Leaf)) {
         throw "Git Bash was not found at: $GitBash"
@@ -385,7 +389,7 @@ try {
         throw "Embedded version mismatch. Expected Sub2API $version, got:`n$versionOutput"
     }
 
-    $tarEntries = Get-Lines (Invoke-CapturedNative 'tar' @('tf', $tarPath))
+    $tarEntries = Get-Lines (Invoke-CapturedNative $WindowsTar @('tf', $tarPath))
     if ($tarEntries -notcontains 'index.json' -or $tarEntries -notcontains 'manifest.json') {
         throw 'Release tar must contain both index.json and manifest.json.'
     }
