@@ -515,7 +515,7 @@ func TestHandleUpstreamError_CommandCodeRateLimitUsesDefaultCooldown(t *testing.
 	require.Equal(t, 0, repo.setErrorCalls)
 	require.Equal(t, 0, repo.tempCalls)
 	if repo.rateLimitedCalls > 0 {
-		require.True(t, repo.lastRateLimitedAt.Before(time.Now().Add(30*time.Minute)), "must not cool down to the 5h window reset")
+		require.WithinDuration(t, time.Now().Add(30*time.Minute), repo.lastRateLimitedAt, time.Second, "must use the default 30-minute cooldown")
 	}
 }
 

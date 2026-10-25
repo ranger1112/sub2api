@@ -148,12 +148,16 @@ function Invoke-GoPackageBatches {
     param(
         [Parameter(Mandatory)][string]$Label,
         [Parameter(Mandatory)][string[]]$Packages,
-        [string[]]$ExtraArguments = @()
+        [string[]]$ExtraArguments = @(),
+        [int]$BatchSize = 20
     )
 
-    $batchSize = 20
-    for ($offset = 0; $offset -lt $Packages.Count; $offset += $batchSize) {
-        $last = [Math]::Min($offset + $batchSize - 1, $Packages.Count - 1)
+    if ($BatchSize -lt 1) {
+        throw 'BatchSize must be at least 1.'
+    }
+
+    for ($offset = 0; $offset -lt $Packages.Count; $offset += $BatchSize) {
+        $last = [Math]::Min($offset + $BatchSize - 1, $Packages.Count - 1)
         $batch = @($Packages[$offset..$last])
         Invoke-Checked "$Label ($($offset + 1)-$($last + 1)/$($Packages.Count))" {
             & go test @ExtraArguments @batch
@@ -194,7 +198,7 @@ function Invoke-ReleaseTests {
                     (Select-String -LiteralPath $fullPath -Pattern '^//go:build\s+.*\bunit\b' -Quiet)
             } | ForEach-Object { Get-ChangedPackagePath $_ } | Sort-Object -Unique)
             if ($unitPackages.Count -gt 0) {
-                Invoke-GoPackageBatches -Label 'Backend unit-tag tests' -Packages $unitPackages -ExtraArguments @('-tags', 'unit')
+                Invoke-GoPackageBatches -Label 'Backend unit-tag tests' -Packages $unitPackages -ExtraArguments @('-tags', 'unit') -BatchSize 1
             }
         }
         finally {

@@ -280,6 +280,9 @@ func (s *RateLimitService) applyCNProviderReactive429(
 		}
 		return false
 	}
+	if account.IsCommandCode() {
+		return false
+	}
 	if !account.IsCNProvider() {
 		return false
 	}
